@@ -1,26 +1,183 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Tokens — "festival lights over a practical city map"
+   Contrast checked: ink on ivory ≈ 15:1, ink-2 on ivory ≈ 7:1,
+   white on vermilion ≈ 5.1:1, ivory on indigo ≈ 14:1, marigold on indigo ≈ 8:1.
+--------------------------------------------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ivory: #fbf5e9;
+  --ivory-2: #f3e9d4;
+  --paper: #fffdf8;
+  --ink: #1c1917;
+  --ink-2: #57534e;
+  --line: #e4d7bd;
+  --indigo: #1e1b4b;
+  --indigo-2: #2a2560;
+  --vermilion: #d7263d;
+  --vermilion-ink: #a81c2f;
+  --marigold: #f2a900;
+  --marigold-soft: #fde7a8;
+
+  --crowd-low: #15803d;
+  --crowd-medium: #a16207;
+  --crowd-high: #c2410c;
+  --crowd-very-high: #b91c1c;
+
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+
+  /* Updated live by the bottom sheet so map controls float above it. */
+  --sheet-h: 132px;
+
+  color-scheme: light;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-ivory: var(--ivory);
+  --color-ivory-2: var(--ivory-2);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-line: var(--line);
+  --color-indigo: var(--indigo);
+  --color-indigo-2: var(--indigo-2);
+  --color-vermilion: var(--vermilion);
+  --color-vermilion-ink: var(--vermilion-ink);
+  --color-marigold: var(--marigold);
+  --color-marigold-soft: var(--marigold-soft);
+  --font-sans: var(--font-hind), system-ui, sans-serif;
+  --font-display: var(--font-yatra), var(--font-hind), serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--ivory);
+  color: var(--ink);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+}
+
+/* iOS zooms into inputs under 16px — never let that happen. */
+input,
+select,
+textarea {
+  font-size: max(16px, 1rem);
+}
+
+:focus-visible {
+  outline: 3px solid var(--marigold);
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Festive details (decorative only — never on map, badges, or forms)
+--------------------------------------------------------------------------- */
+
+/* Alpana-inspired edge: petals + dots in a repeating band. */
+.festive-edge {
+  height: 10px;
+  background-color: var(--indigo);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='10' viewBox='0 0 28 10'%3E%3Cpath d='M7 1 Q10 5 7 9 Q4 5 7 1Z' fill='%23F2A900'/%3E%3Ccircle cx='21' cy='5' r='1.8' fill='%23D7263D'/%3E%3Ccircle cx='14' cy='5' r='0.9' fill='%23FDE7A8'/%3E%3Ccircle cx='0' cy='5' r='0.9' fill='%23FDE7A8'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: center;
+}
+
+/* A thin dotted rangoli line used on card tops and section dividers. */
+.festive-dots {
+  height: 4px;
+  background-image: radial-gradient(circle, var(--marigold) 1.2px, transparent 1.6px);
+  background-size: 10px 4px;
+  background-repeat: repeat-x;
+}
+
+/* String lights hanging across the header. Static glow — no flashing. */
+.string-lights {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='18' viewBox='0 0 120 18'%3E%3Cpath d='M0 3 Q30 13 60 3 T120 3' stroke='%23F2A900' stroke-opacity='.35' fill='none' stroke-width='1'/%3E%3Cg%3E%3Ccircle cx='15' cy='9' r='5' fill='%23F2A900' opacity='.18'/%3E%3Ccircle cx='15' cy='9' r='2' fill='%23FDE7A8'/%3E%3Ccircle cx='45' cy='9' r='5' fill='%23D7263D' opacity='.22'/%3E%3Ccircle cx='45' cy='9' r='2' fill='%23FF8A8A'/%3E%3Ccircle cx='75' cy='9' r='5' fill='%23F2A900' opacity='.18'/%3E%3Ccircle cx='75' cy='9' r='2' fill='%23FDE7A8'/%3E%3Ccircle cx='105' cy='9' r='5' fill='%23F2A900' opacity='.18'/%3E%3Ccircle cx='105' cy='9' r='2' fill='%23FFD36B'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: 0 0;
+}
+
+.skeleton {
+  background: linear-gradient(100deg, var(--ivory-2) 30%, #f9edd0 50%, var(--ivory-2) 70%);
+  background-size: 300% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+@keyframes shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Leaflet adjustments
+--------------------------------------------------------------------------- */
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: #e9e4d8;
+}
+
+/* Keep attribution visible above the sheet, bottom-left, readable outdoors. */
+.leaflet-control-attribution {
+  font-size: 11px !important;
+  background: rgb(255 253 248 / 0.92) !important;
+  color: var(--ink-2) !important;
+  padding: 2px 6px !important;
+  border-radius: 6px 6px 0 0;
+}
+.leaflet-control-attribution a {
+  color: var(--ink) !important;
+}
+.home-map .leaflet-bottom.leaflet-left {
+  bottom: calc(var(--sheet-h) + 2px);
+  transition: bottom 0.2s ease;
+}
+
+.pin-icon,
+.cluster-icon {
+  background: transparent;
+  border: 0;
+}
+
+.cluster-bubble {
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  background: var(--indigo);
+  color: var(--paper);
+  font-weight: 700;
+  border: 3px solid var(--marigold);
+  box-shadow: 0 0 0 4px rgb(242 169 0 / 0.25), 0 4px 10px rgb(0 0 0 / 0.25);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Leaflet's default zoom buttons are 30px — enlarge to a 48px touch target. */
+.leaflet-touch .leaflet-bar a,
+.leaflet-bar a {
+  width: 48px !important;
+  height: 48px !important;
+  line-height: 48px !important;
+  font-size: 22px !important;
 }

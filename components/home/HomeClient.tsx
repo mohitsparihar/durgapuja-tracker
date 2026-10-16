@@ -1,0 +1,508 @@
+"use client";
+
+import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AppHeader } from "@/components/AppHeader";
+import { LocateIcon, MinusIcon, PlusIcon } from "@/components/icons";
+import { PandalCard, PandalCardSkeleton } from "@/components/PandalCard";
+import { SearchBar } from "@/components/SearchBar";
+import { ErrorBanner, LocationBanner, OfflineBanner } from "@/components/StateBanners";
+import { useAuth } from "@/lib/auth";
+import { LIMITS } from "@/lib/config";
+import { nearbyPandals, pandalClusters, pandalsInBounds, subscribeCrowd } from "@/lib/data";
+import { friendlyError } from "@/lib/errors";
+import { boundsCenter, clusterCellDeg, distanceM } from "@/lib/geo";
+import { storage, useIsSide, useOnline, useRefetchOnReturn } from "@/lib/hooks";
+import { LAST_LIST_KEY, type CachedList } from "@/lib/offline";
+import type { Cluster, GeocodeResult, LatLng, PandalSummary } from "@/lib/types";
+import { BottomSheet, type Snap } from "./BottomSheet";
+import type { MapApi, MapView } from "./HomeMap";
+
+const HomeMap = dynamic(() => import("./HomeMap"), {
+  ssr: false,
+  loading: () => <div className="skeleton h-full w-full" aria-label="Loading map" />,
+});
+
+type LocState = "pending" | "granted" | "denied";
+interface RefPoint extends LatLng {
+  label: string;
+  kind: "gps" | "place";
+}
+interface ListState {
+  items: PandalSummary[];
+  truncated: boolean;
+  loading: boolean;
+  error: string | null;
+  fromCache: boolean;
+  /** Which reference point the items belong to (nearby list only). */
+  ref?: string;
+}
+
+
+const EMPTY_LIST: ListState = { items: [], truncated: false, loading: false, error: null, fromCache: false };
+
+export default function HomeClient() {
+  const router = useRouter();
+  const { requireUser } = useAuth();
+  const online = useOnline();
+  const side = useIsSide();
+
+  const mapApi = useRef<MapApi | null>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerH, setHeaderH] = useState(120);
+
+  const [view, setView] = useState<MapView | null>(null);
+  const [ref, setRef] = useState<RefPoint | null>(null);
+  const [userPoint, setUserPoint] = useState<LatLng | null>(null);
+  const [loc, setLoc] = useState<LocState>("pending");
+  const [markers, setMarkers] = useState<PandalSummary[]>([]);
+  const [clusters, setClusters] = useState<Cluster[]>([]);
+  const [area, setArea] = useState<ListState>({ ...EMPTY_LIST, loading: true });
+  const [nearby, setNearby] = useState<ListState>(EMPTY_LIST);
+  const [selected, setSelected] = useState<PandalSummary | null>(null);
+  const [snap, setSnap] = useState<Snap>("peek");
+  const [tick, setTick] = useState(0);
+
+  const refetch = useCallback(() => setTick((t) => t + 1), []);
+  useRefetchOnReturn(refetch);
+
+  // Header height feeds the sheet's full-height snap.
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeaderH(el.getBoundingClientRect().height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Realtime crowd updates only *trigger* a refetch (events aren't guaranteed delivery).
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const off = subscribeCrowd(() => {
+      clearTimeout(t);
+      t = setTimeout(refetch, 800);
+    });
+    return () => {
+      clearTimeout(t);
+      off();
+    };
+  }, [refetch]);
+
+  // ---- Geolocation -------------------------------------------------------
+  // Bumped whenever the visitor picks a place / area, so a late GPS fix can't override it.
+  const choiceSeq = useRef(0);
+  const locate = useCallback((fly: boolean) => {
+    const seqAtStart = choiceSeq.current;
+    if (!("geolocation" in navigator)) {
+      setLoc("denied");
+      return;
+    }
+    setLoc((l) => (l === "granted" ? l : "pending"));
+    // The browser's `timeout` only starts after the user answers the prompt; if they
+    // ignore it, fall back to the all-India + search flow instead of waiting forever.
+    const fallback = setTimeout(() => setLoc((l) => (l === "pending" ? "denied" : l)), 12_000);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        clearTimeout(fallback);
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserPoint(p);
+        setLoc("granted");
+        if (choiceSeq.current !== seqAtStart) return;
+        setRef({ ...p, label: "you", kind: "gps" });
+        if (fly) mapApi.current?.flyTo(p, 14);
+      },
+      () => {
+        clearTimeout(fallback);
+        setLoc((l) => (l === "granted" ? l : "denied"));
+      },
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
+    );
+  }, []);
+
+  const pendingFly = useRef(true);
+  const onReady = useCallback(
+    (api: MapApi) => {
+      mapApi.current = api;
+      if (pendingFly.current) {
+        pendingFly.current = false;
+        locate(true);
+      }
+    },
+    [locate],
+  );
+
+  // ---- Map data: markers at zoom >= 10, otherwise clusters ------------------
+  const mapReq = useRef(0);
+  useEffect(() => {
+    if (!view) return;
+    const id = ++mapReq.current;
+    const t = setTimeout(async () => {
+      if (view.zoom >= LIMITS.markerMinZoom) {
+        setArea((a) => ({ ...a, loading: true, error: null }));
+        try {
+          const r = await pandalsInBounds(view.bounds);
+          if (id !== mapReq.current) return;
+          setMarkers(r.items);
+          setClusters([]);
+          setArea({ items: r.items, truncated: r.truncated, loading: false, error: null, fromCache: false });
+        } catch (e) {
+          if (id !== mapReq.current) return;
+          setArea((a) => ({ ...a, loading: false, error: friendlyError(e) }));
+        }
+      } else {
+        try {
+          const c = await pandalClusters(view.bounds, clusterCellDeg(view.bounds));
+          if (id !== mapReq.current) return;
+          setClusters(c);
+          setMarkers([]);
+          setArea({ ...EMPTY_LIST });
+        } catch (e) {
+          if (id !== mapReq.current) return;
+          setArea({ ...EMPTY_LIST, error: friendlyError(e) });
+        }
+      }
+    }, 250);
+    return () => {
+      clearTimeout(t);
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- request counter, not a DOM ref; bumping it is the point
+      mapReq.current++; // invalidate any response still in flight for the old view
+    };
+  }, [view, tick]);
+
+  // ---- Nearby list around the reference point -------------------------------
+  const nearReq = useRef(0);
+  const refKey = ref ? `${ref.lat},${ref.lng}` : "";
+  useEffect(() => {
+    if (!ref) return;
+    const id = ++nearReq.current;
+    // Never show the new title ("Near X") with the previous reference point's items.
+    setNearby((n) => (n.ref === refKey ? { ...n, loading: true, error: null } : { ...EMPTY_LIST, loading: true, ref: refKey }));
+    nearbyPandals(ref.lat, ref.lng)
+      .then((r) => {
+        if (id !== nearReq.current) return;
+        setNearby({ items: r.items, truncated: r.truncated, loading: false, error: null, fromCache: false, ref: refKey });
+      })
+      .catch((e) => {
+        if (id !== nearReq.current) return;
+        setNearby((n) => ({ ...n, loading: false, error: friendlyError(e) }));
+      });
+    return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- request counter, not a DOM ref
+      nearReq.current++;
+    };
+  }, [ref, refKey, tick]);
+
+  // ---- Which list are we showing? ------------------------------------------
+  const zoomedOut = (view?.zoom ?? 0) < LIMITS.markerMinZoom;
+  const mode: "nearby" | "area" | "zoom" | "locating" = ref
+    ? "nearby"
+    : loc === "pending"
+      ? "locating"
+      : zoomedOut
+        ? "zoom"
+        : "area";
+  const title =
+    mode === "nearby"
+      ? ref!.kind === "gps"
+        ? "Nearby"
+        : `Near ${ref!.label.split(",")[0]}`
+      : mode === "area"
+        ? "Pandals in this area"
+        : mode === "locating"
+          ? "Finding pandals near you…"
+          : "Zoom in to see pandals";
+  const list: ListState = mode === "nearby" ? nearby : mode === "area" ? area : EMPTY_LIST;
+
+  // Offline fallback: keep the last good list and show it when fetches fail offline.
+  const [cached, setCached] = useState<CachedList | null>(null);
+  useEffect(() => setCached(storage.get<CachedList>(LAST_LIST_KEY)), []);
+  useEffect(() => {
+    if (!list.loading && !list.error && list.items.length > 0) {
+      const c = { title, items: list.items.slice(0, 50), savedAt: new Date().toISOString() };
+      storage.set(LAST_LIST_KEY, c);
+      setCached(c);
+    }
+  }, [list, title]);
+  const showCached = !online && (list.error != null || list.items.length === 0) && cached != null;
+  const shown = showCached ? cached!.items : list.items;
+
+  // Pin the selected pandal to the top if it isn't part of the current list.
+  const selectedOutside = selected && !shown.some((p) => p.id === selected.id) ? selected : null;
+
+  // "Search this area" when the map has drifted away from the nearby reference point.
+  const drifted = useMemo(() => {
+    if (!ref || !view || zoomedOut) return false;
+    const c = boundsCenter(view.bounds);
+    const span = distanceM({ lat: view.bounds.south, lng: c.lng }, { lat: view.bounds.north, lng: c.lng });
+    return distanceM(ref, c) > Math.max(1500, span * 0.6);
+  }, [ref, view, zoomedOut]);
+
+  // ---- Interactions --------------------------------------------------------
+  const selectFromList = useCallback(
+    (p: PandalSummary) => {
+      setSelected(p);
+      mapApi.current?.flyTo(p, Math.max(mapApi.current.getZoom(), 15));
+      if (snap === "full") setSnap("half");
+    },
+    [snap],
+  );
+
+  const selectFromMap = useCallback((p: PandalSummary) => {
+    setSelected(p);
+    setSnap((s) => (s === "peek" ? "half" : s));
+    setTimeout(() => {
+      document.getElementById(`card-${p.id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 260);
+  }, []);
+
+  const onCluster = useCallback((c: Cluster) => {
+    const z = mapApi.current?.getZoom() ?? 5;
+    mapApi.current?.flyTo(c, Math.min(Math.max(z + 3, LIMITS.markerMinZoom), 13));
+  }, []);
+
+  const onPlace = useCallback((r: GeocodeResult) => {
+    choiceSeq.current++;
+    setRef({ lat: r.lat, lng: r.lng, label: r.label, kind: "place" });
+    setSelected(null);
+    mapApi.current?.flyTo(r, 14);
+    setSnap((s) => (s === "peek" ? "half" : s));
+  }, []);
+
+  const searchThisArea = () => {
+    choiceSeq.current++;
+    setRef(null);
+    setSelected(null);
+  };
+
+  const addPandal = () => {
+    if (requireUser("Sign in to add a pandal and its photos.", { next: "/add", onSignedIn: () => router.push("/add") }))
+      router.push("/add");
+  };
+
+  const focusSearch = () => document.getElementById("place-search-input")?.focus();
+
+  // ---- Render --------------------------------------------------------------
+  const listHeader = (
+    <div className="px-4 pb-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="min-w-0 truncate text-lg font-bold" data-testid="list-title">
+          {showCached ? cached!.title : title}
+        </h2>
+        {!list.loading && shown.length > 0 && (
+          <span className="shrink-0 text-sm text-ink-2" data-testid="list-count">
+            {shown.length}
+            {list.truncated ? "+" : ""} pandal{shown.length === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+      {mode === "nearby" && ref?.kind === "gps" && (
+        <p className="text-sm text-ink-2">Within {LIMITS.nearbyRadiusM / 1000} km, closest first</p>
+      )}
+    </div>
+  );
+
+  const listBody = (
+    <div className="space-y-2.5 pt-1">
+      {selectedOutside && (
+        <PandalCard p={selectedOutside} selected onSelect={selectFromList} />
+      )}
+
+      {list.error && !showCached && <ErrorBanner message={list.error} onRetry={refetch} />}
+
+      {(list.loading || mode === "locating") && shown.length === 0 &&
+        Array.from({ length: 3 }, (_, i) => <PandalCardSkeleton key={i} />)}
+
+      {mode === "zoom" && !showCached && (
+        <EmptyState
+          title="Zoom in to see pandals"
+          body="Tap a bubble on the map or search a place to see individual pandals."
+          action={
+            <button onClick={focusSearch} className="h-12 rounded-xl bg-indigo px-4 text-base font-semibold text-ivory">
+              Search a place
+            </button>
+          }
+        />
+      )}
+
+      {shown.map((p) => (
+        <PandalCard key={p.id} p={p} selected={selected?.id === p.id} onSelect={selectFromList} />
+      ))}
+
+      {!list.loading && !list.error && (mode === "nearby" || mode === "area") && shown.length === 0 && (
+        <EmptyState
+          title="No pandals here yet — be the first to add one"
+          body={
+            mode === "nearby"
+              ? `Nothing within ${LIMITS.nearbyRadiusM / 1000} km has been added. Spotted one? Add it with a photo.`
+              : "Nothing has been added in this part of the map yet."
+          }
+          action={
+            <button onClick={addPandal} className="h-12 rounded-xl bg-vermilion px-4 text-base font-semibold text-white">
+              Add a pandal
+            </button>
+          }
+        />
+      )}
+
+      {list.truncated && !showCached && (
+        <p className="px-1 py-2 text-center text-sm text-ink-2" data-testid="truncation-note">
+          {mode === "nearby"
+            ? `Showing the nearest ${LIMITS.nearbyLimit} — move the map and tap “Search this area” to explore more.`
+            : `Showing ${LIMITS.boundsLimit} pandals in this area — zoom in for more.`}
+        </p>
+      )}
+    </div>
+  );
+
+  const controlsHidden = !side && snap === "full";
+  // With the sheet half open the map is small; shrink the FAB to an icon so it covers less.
+  const fabCompact = !side && snap === "half";
+
+  return (
+    <div className="fixed inset-0 flex flex-col bg-ivory">
+      <AppHeader ref={headerRef} compact={side}>
+        <SearchBar onPick={onPlace} />
+      </AppHeader>
+
+      <div className={`relative flex min-h-0 flex-1 ${side ? "flex-row" : ""}`}>
+        {side && (
+          <aside
+            className="z-[500] flex h-full w-[min(360px,46vw)] shrink-0 flex-col border-r border-line bg-ivory"
+            aria-label="Pandal list"
+            data-testid="side-panel"
+            style={{ paddingLeft: "var(--safe-l)" }}
+          >
+            <div className="pt-3">{listHeader}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-3" style={{ paddingBottom: "calc(16px + var(--safe-b))" }}>
+              {listBody}
+            </div>
+          </aside>
+        )}
+
+        <div className="relative min-w-0 flex-1" style={side ? ({ "--sheet-h": "0px" } as React.CSSProperties) : undefined}>
+          <div className="absolute inset-0">
+            <HomeMap
+              markers={markers}
+              clusters={clusters}
+              selectedId={selected?.id ?? null}
+              userPoint={userPoint}
+              onMarkerSelect={selectFromMap}
+              onClusterSelect={onCluster}
+              onView={setView}
+              onReady={onReady}
+            />
+          </div>
+
+          {/* Top overlays */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-[450] flex flex-col items-center gap-2 p-2">
+            {!online && <OfflineBanner hasCache={cached != null} />}
+            {online && loc === "denied" && !ref && (
+              <LocationBanner onRetry={() => locate(true)} onSearch={focusSearch} />
+            )}
+            {drifted && (
+              <button
+                onClick={searchThisArea}
+                className="pointer-events-auto h-12 rounded-full bg-indigo px-5 text-base font-semibold text-ivory shadow-lg"
+                data-testid="search-area"
+              >
+                Search this area
+              </button>
+            )}
+          </div>
+
+          {/* Map controls + FAB float above the sheet (portrait) or map corner (side). */}
+          <div
+            className={`absolute right-3 z-[450] flex flex-col items-end gap-2 transition-opacity ${
+              controlsHidden ? "pointer-events-none opacity-0" : "opacity-100"
+            }`}
+            style={{
+              bottom: side
+                ? "calc(28px + var(--safe-b))"
+                : "calc(var(--sheet-h) + 28px)",
+              paddingRight: "var(--safe-r)",
+            }}
+            aria-hidden={controlsHidden}
+          >
+            <div className={`flex-col overflow-hidden rounded-2xl border border-line bg-paper shadow-lg ${
+                fabCompact ? "hidden" : "flex"
+              } [@media(max-height:420px)]:hidden`}>
+              <MapButton label="Zoom in" onClick={() => mapApi.current?.zoomIn()}>
+                <PlusIcon />
+              </MapButton>
+              <span className="h-px bg-line" />
+              <MapButton label="Zoom out" onClick={() => mapApi.current?.zoomOut()}>
+                <MinusIcon />
+              </MapButton>
+            </div>
+            <MapButton label="Show my location" onClick={() => locate(true)} solo>
+              <LocateIcon className={`h-5 w-5 ${loc === "granted" ? "text-[#2563eb]" : ""}`} />
+            </MapButton>
+            <button
+              onClick={addPandal}
+              aria-label="Add pandal"
+              className={`mt-1 flex h-14 items-center justify-center gap-2 rounded-full bg-vermilion text-base font-bold text-white shadow-[0_6px_20px_rgba(215,38,61,0.45)] active:bg-vermilion-ink ${
+                fabCompact ? "w-14" : "pl-4 pr-5"
+              }`}
+              data-testid="add-fab"
+            >
+              <PlusIcon className="h-6 w-6" />
+              {!fabCompact && <span>Add pandal</span>}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {!side && (
+        <BottomSheet snap={snap} onSnap={setSnap} topOffset={headerH} header={listHeader}>
+          {listBody}
+        </BottomSheet>
+      )}
+    </div>
+  );
+}
+
+function MapButton({
+  label,
+  onClick,
+  children,
+  solo = false,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  solo?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={`grid h-12 w-12 place-items-center bg-paper text-ink active:bg-ivory-2 ${
+        solo ? "rounded-2xl border border-line shadow-lg" : ""
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function EmptyState({ title, body, action }: { title: string; body: string; action?: React.ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-line bg-paper text-center" data-testid="empty-state">
+      <div className="festive-edge" aria-hidden />
+      <div className="px-5 py-5">
+        <svg viewBox="0 0 120 28" className="mx-auto mb-2 h-7 w-28" aria-hidden>
+          <path d="M2 6 Q30 22 60 6 T118 6" stroke="#f2a900" strokeOpacity=".5" fill="none" />
+          {[14, 36, 60, 84, 106].map((x, i) => (
+            <circle key={x} cx={x} cy={i % 2 ? 14 : 12} r="4" fill={i % 2 ? "#d7263d" : "#f2a900"} />
+          ))}
+        </svg>
+        <h3 className="text-lg font-bold leading-snug">{title}</h3>
+        <p className="mt-1 text-base text-ink-2">{body}</p>
+        {action && <div className="mt-4">{action}</div>}
+      </div>
+    </div>
+  );
+}
