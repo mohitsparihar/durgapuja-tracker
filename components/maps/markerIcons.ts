@@ -16,17 +16,29 @@ function icon(key: string, svg: string, w: number, h: number, ax: number, ay: nu
   return made;
 }
 
-export function pandalPinIcon(selected: boolean, review: boolean): google.maps.Icon {
+export function placePinIcon(kind: "pandal" | "ramleela" | "ravan", selected: boolean, review: boolean): google.maps.Icon {
   const w = selected ? 44 : 34;
   const h = selected ? 56 : 44;
-  const fill = selected ? "#1e1b4b" : "#d7263d";
-  const stroke = selected ? "#f2a900" : "#ffffff";
+  const fill = selected ? "#1e1b4b" : kind === "ramleela" ? "#0f766e" : kind === "ravan" ? "#ea580c" : "#d7263d";
+  const stroke = selected
+    ? kind === "ramleela"
+      ? "#0f766e"
+      : kind === "ravan"
+        ? "#ea580c"
+        : "#f2a900"
+    : kind === "ravan"
+      ? "#7c2d12"
+      : "#ffffff";
   const sw = selected ? 3 : 2.5;
-  const dot = selected ? "#f2a900" : "#ffffff";
+  const dot = selected ? (kind === "ramleela" ? "#5eead4" : kind === "ravan" ? "#fdba74" : "#f2a900") : "#ffffff";
   const r = review ? 4.5 : 5.5;
   const shadow = selected ? `<ellipse cx="17" cy="41" rx="9" ry="3" fill="rgba(0,0,0,.25)"/>` : "";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 34 44">${shadow}<path d="M17 1.5C8.4 1.5 1.5 8.3 1.5 16.8 1.5 28.5 17 42 17 42s15.5-13.5 15.5-25.2C32.5 8.3 25.6 1.5 17 1.5Z" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/><circle cx="17" cy="16.5" r="${r}" fill="${dot}"/></svg>`;
-  return icon(`pin-${selected}-${review}`, svg, w, h, w / 2, h - 2);
+  return icon(`pin-${kind}-${selected}-${review}`, svg, w, h, w / 2, h - 2);
+}
+
+export function pandalPinIcon(selected: boolean, review: boolean): google.maps.Icon {
+  return placePinIcon("pandal", selected, review);
 }
 
 export function searchPinIcon(): google.maps.Icon {

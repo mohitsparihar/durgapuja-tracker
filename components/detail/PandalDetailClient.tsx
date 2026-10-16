@@ -6,21 +6,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CrowdBadge } from "@/components/CrowdBadge";
 import { CrowdReportButtons } from "@/components/CrowdReportButtons";
 import { FlagButton } from "@/components/FlagButton";
-import { AlertIcon, CameraIcon, DirectionsIcon, PinIcon, TrashIcon } from "@/components/icons";
+import { AlertIcon, BackIcon, CameraIcon, DirectionsIcon, PinIcon, TrashIcon } from "@/components/icons";
 import { ConfirmModal, Toast } from "@/components/Modal";
 import { PageBar } from "@/components/PageBar";
+import { Celebrate } from "@/components/detail/Celebrate";
+import { EditPandal } from "@/components/detail/EditPandal";
+import { PhotoDots } from "@/components/detail/PhotoDots";
 import { PhotoLightbox } from "@/components/detail/PhotoLightbox";
 import { PhotoImg } from "@/components/PhotoImg";
 import { ErrorBanner } from "@/components/StateBanners";
 import { useAuth } from "@/lib/auth";
-import { deletePandal, deletePhoto, getPandal, subscribeCrowd } from "@/lib/data";
+import { takeCelebrate } from "@/lib/celebrate";
+import { deletePandal, deletePhoto, getPandal, setPlaceNote, subscribeCrowd } from "@/lib/data";
 import { errorKey } from "@/lib/errors";
 import { useI18n, type Key } from "@/lib/i18n";
 import { directionsUrl } from "@/lib/geo";
 import { useMinWidth, useRefetchOnReturn } from "@/lib/hooks";
+import { formatDay, istDate, seasonFor } from "@/lib/season";
 import dynamic from "next/dynamic";
 import { takePendingAction, type PendingAction } from "@/lib/pending-action";
-import type { CrowdReport, PandalDetail, Photo } from "@/lib/types";
+import type { CrowdReport, PandalDetail, Photo, PlaceNote } from "@/lib/types";
 
 const MiniMap = dynamic(() => import("./MiniMap"), {
   ssr: false,
@@ -29,7 +34,7 @@ const MiniMap = dynamic(() => import("./MiniMap"), {
 
 export default function PandalDetailClient({ id }: { id: string }) {
   const router = useRouter();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { user, requireUser } = useAuth();
   const wide = useMinWidth(1024);
   const [p, setP] = useState<PandalDetail | null>(null);
@@ -40,8 +45,20 @@ export default function PandalDetailClient({ id }: { id: string }) {
   const [confirm, setConfirm] = useState<{ kind: "pandal" } | { kind: "photo"; photo: Photo } | null>(null);
   const [showReport, setShowReport] = useState(false);
   const [viewer, setViewer] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [coverAt, setCoverAt] = useState(0);
+  const [coverDrag, setCoverDrag] = useState(0);
+  const [coverDragging, setCoverDragging] = useState(false);
+  const coverSwipe = useRef<{ x: number; y: number; axis: "x" | "y" | null } | null>(null);
+  const coverDragRef = useRef(0);
+  const coverSwiped = useRef(false);
   const [resumed, setResumed] = useState<PendingAction | null>(null);
+  const [celebrate, setCelebrate] = useState(false);
   const req = useRef(0);
+
+  useEffect(() => {
+    if (takeCelebrate(id)) setCelebrate(true);
+  }, [id]);
 
   // Back from Google sign-in mid-action? Reopen it pre-filled (never auto-submit).
   useEffect(() => {
@@ -118,8 +135,27 @@ export default function PandalDetailClient({ id }: { id: string }) {
     );
 
   const crowd = optimistic ?? p.crowd;
+  const markPlace = async (place: PandalDetail, status: PlaceNote) => {
+    const u = requireUser(t("signInNote"));
+    if (!u) return;
+    try {
+      await setPlaceNote(place.id, place.my_note === status ? null : status, u.id);
+      await load();
+    } catch (e) {
+      setErr(t(errorKey(e)));
+    }
+  };
   const isOwner = user?.id != null && user.id === p.created_by;
-  const coverPhoto = p.photos.find((ph) => ph.status === "active") ?? null;
+  const coverIndex = p.photos.length === 0 ? 0 : coverAt % p.photos.length;
+  const coverPhoto = p.photos[coverIndex] ?? null;
+  const showCoverArrows = p.photos.length > 1;
+  const shiftCover = (dir: -1 | 1) => {
+    setCoverAt((i) => {
+      const next = i + dir;
+      if (next < 0 || next >= p.photos.length) return i;
+      return next;
+    });
+  };
   const addPhotos = () => {
     const next = `/add?pandal=${encodeURIComponent(p.id)}`;
     if (requireUser(t("signInPhotos"), { next, onSignedIn: () => router.push(next) }))
@@ -137,19 +173,129 @@ export default function PandalDetailClient({ id }: { id: string }) {
         <div className="contents lg:block lg:min-w-0">
           {/* 1. Cover photo */}
           <div
-            className="relative order-1 h-[34dvh] max-h-80 min-h-44 w-full bg-indigo-2 lg:h-[min(62vh,560px)] lg:max-h-none lg:overflow-hidden lg:rounded-3xl"
+            className="relative order-1 h-[34dvh] max-h-80 min-h-44 w-full overflow-hidden bg-indigo-2 lg:h-[min(62vh,560px)] lg:max-h-none lg:rounded-3xl"
             data-testid="detail-cover"
           >
             {coverPhoto ? (
-              <button
-                type="button"
-                onClick={() => setViewer(Math.max(0, p.photos.findIndex((ph) => ph.id === coverPhoto.id)))}
-                className="h-full w-full"
-                aria-label={t("viewPhoto")}
-                data-testid="open-cover"
-              >
-                <PhotoImg src={coverPhoto.url} alt={t("photoOf", { name: p.name })} className="h-full w-full object-cover" eager />
-              </button>
+              <>
+                <div
+                  className="absolute inset-0 touch-pan-y"
+                  onPointerDown={(e) => {
+                    if ((e.target as HTMLElement).closest("[data-cover-arrow]")) return;
+                    coverSwipe.current = { x: e.clientX, y: e.clientY, axis: null };
+                  }}
+                  onPointerMove={(e) => {
+                    const start = coverSwipe.current;
+                    if (!start || !showCoverArrows) return;
+                    const dx = e.clientX - start.x;
+                    const dy = e.clientY - start.y;
+                    if (start.axis == null) {
+                      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+                      start.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+                      if (start.axis === "x") {
+                        setCoverDragging(true);
+                        try {
+                          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                        } catch {
+                          /* the pointer can already be gone */
+                        }
+                      }
+                    }
+                    if (start.axis !== "x") return;
+                    let x = dx;
+                    const atStart = coverIndex === 0 && x > 0;
+                    const atEnd = coverIndex === p.photos.length - 1 && x < 0;
+                    if (atStart || atEnd) x *= 0.35;
+                    coverDragRef.current = x;
+                    setCoverDrag(x);
+                  }}
+                  onPointerUp={() => {
+                    const start = coverSwipe.current;
+                    const dragged = coverDragRef.current;
+                    coverSwipe.current = null;
+                    coverDragRef.current = 0;
+                    setCoverDrag(0);
+                    setCoverDragging(false);
+                    if (!start || start.axis !== "x" || !showCoverArrows) return;
+                    coverSwiped.current = true;
+                    if (Math.abs(dragged) < 48) return;
+                    shiftCover(dragged < 0 ? 1 : -1);
+                  }}
+                  onPointerCancel={() => {
+                    coverSwipe.current = null;
+                    coverDragRef.current = 0;
+                    setCoverDrag(0);
+                    setCoverDragging(false);
+                  }}
+                >
+                  <div
+                    className={`flex h-full ${coverDragging ? "" : "transition-transform duration-300 ease-out motion-reduce:transition-none"}`}
+                    style={{
+                      width: `${p.photos.length * 100}%`,
+                      transform: `translateX(calc(-${(coverIndex * 100) / p.photos.length}% + ${coverDrag}px))`,
+                    }}
+                  >
+                    {p.photos.map((ph, i) => (
+                      <button
+                        key={ph.id}
+                        type="button"
+                        onClick={() => {
+                          if (coverSwiped.current) {
+                            coverSwiped.current = false;
+                            return;
+                          }
+                          setViewer(i);
+                        }}
+                        className="h-full shrink-0"
+                        style={{ width: `${100 / p.photos.length}%` }}
+                        aria-label={t("viewPhoto")}
+                        data-testid={i === coverIndex ? "open-cover" : undefined}
+                      >
+                        <PhotoImg
+                          src={ph.url}
+                          alt={t("photoOf", { name: p.name })}
+                          className="h-full w-full object-cover"
+                          eager={Math.abs(i - coverIndex) <= 1}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {coverIndex > 0 && (
+                  <button
+                    type="button"
+                    data-cover-arrow
+                    onClick={() => shiftCover(-1)}
+                    className="absolute left-2 top-1/2 z-10 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-black/60 text-ivory shadow-md"
+                    aria-label={t("photoPrev")}
+                    data-testid="cover-prev"
+                  >
+                    <BackIcon className="h-7 w-7" />
+                  </button>
+                )}
+                {coverIndex < p.photos.length - 1 && (
+                  <button
+                    type="button"
+                    data-cover-arrow
+                    onClick={() => shiftCover(1)}
+                    className="absolute right-2 top-1/2 z-10 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-black/60 text-ivory shadow-md"
+                    aria-label={t("photoNext")}
+                    data-testid="cover-next"
+                  >
+                    <BackIcon className="h-7 w-7 rotate-180" />
+                  </button>
+                )}
+                {showCoverArrows && (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center">
+                    <div className="rounded-full bg-black/55 px-2.5 py-1.5">
+                      <PhotoDots count={p.photos.length} index={coverIndex} />
+                    </div>
+                    <p className="sr-only" aria-live="polite">
+                      {t("photoPosition", { n: coverIndex + 1, total: p.photos.length })}
+                    </p>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-ivory">
                 <div className="festive-edge absolute inset-x-0 top-0" aria-hidden />
@@ -191,11 +337,11 @@ export default function PandalDetailClient({ id }: { id: string }) {
                       </span>
                     )}
                     <div className="absolute bottom-1 right-1 z-10 flex gap-1">
-                      {user?.id === ph.user_id && (
+                      {(user?.id === ph.user_id || isOwner) && (
                         <button
                           onClick={() => setConfirm({ kind: "photo", photo: ph })}
                           className="grid h-12 w-12 place-items-center rounded-full bg-indigo/70 text-ivory"
-                          aria-label={t("deleteYourPhoto")}
+                          aria-label={t(isOwner ? "removePhoto" : "deleteYourPhoto")}
                         >
                           <TrashIcon />
                         </button>
@@ -249,6 +395,20 @@ export default function PandalDetailClient({ id }: { id: string }) {
             )}
 
             {/* 2. Name + 3. area */}
+            {p.kind === "ramleela" && (
+              <p className="mb-2">
+                <span className="rounded-full bg-ramleela-soft px-2 py-0.5 text-xs font-semibold text-ramleela">
+                  {t("kindRamleela")}
+                </span>
+              </p>
+            )}
+            {p.kind === "ravan" && (
+              <p className="mb-2">
+                <span className="rounded-full bg-ravan-soft px-2 py-0.5 text-xs font-semibold text-ravan">
+                  {t("kindRavan")}
+                </span>
+              </p>
+            )}
             <h1 className="break-words text-2xl font-bold leading-tight lg:text-3xl" data-testid="detail-name">
               {p.name}
             </h1>
@@ -258,6 +418,33 @@ export default function PandalDetailClient({ id }: { id: string }) {
                 <span className="break-words">{p.address ?? p.city}</span>
               </p>
             )}
+            <SeasonNote pandal={p} lang={lang} />
+            {p.closed_count > 0 && <p className="mt-2 text-sm font-medium text-ink-2">{t("closedHint")}</p>}
+            {p.gone_count > 0 && <p className="mt-2 text-sm font-medium text-ink-2">{t("notThereHint")}</p>}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                aria-pressed={p.my_note === "closed"}
+                onClick={() => void markPlace(p, "closed")}
+                className={`h-12 rounded-xl border-2 px-4 text-base font-semibold ${
+                  p.my_note === "closed" ? "border-ink bg-ink text-ivory" : "border-line bg-paper text-ink"
+                }`}
+                data-testid="mark-closed"
+              >
+                {t("markClosed")}
+              </button>
+              <button
+                type="button"
+                aria-pressed={p.my_note === "not_there"}
+                onClick={() => void markPlace(p, "not_there")}
+                className={`h-12 rounded-xl border-2 px-4 text-base font-semibold ${
+                  p.my_note === "not_there" ? "border-vermilion bg-vermilion text-white" : "border-line bg-paper text-ink"
+                }`}
+                data-testid="mark-not-there"
+              >
+                {t("markNotThere")}
+              </button>
+            </div>
 
             {/* 4. Crowd status + age */}
             <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="detail-crowd">
@@ -321,7 +508,7 @@ export default function PandalDetailClient({ id }: { id: string }) {
           {/* Desktop-only location map (not mounted on phones) */}
           {wide && (
             <div className="h-56 overflow-hidden rounded-3xl border border-line" data-testid="detail-minimap">
-              <MiniMap at={p} label={p.name} />
+              <MiniMap at={p} label={p.name} kind={p.kind === "ramleela" ? "ramleela" : "pandal"} />
             </div>
           )}
 
@@ -331,18 +518,39 @@ export default function PandalDetailClient({ id }: { id: string }) {
               <FlagButton kind="pandal" targetId={p.id} pandalId={p.id} resume={flagResume("pandal", p.id)} onDone={setToast} />
               <p className="w-full text-sm text-ink-2">{t("wrongPinHint")}</p>
               {isOwner && (
-                <button
-                  onClick={() => setConfirm({ kind: "pandal" })}
-                  className="flex h-12 items-center gap-2 rounded-xl border-2 border-vermilion px-4 text-base font-semibold text-vermilion-ink"
-                  data-testid="delete-pandal"
-                >
-                  <TrashIcon /> {t("deletePandal")}
-                </button>
+                <>
+                  <button
+                    onClick={() => setEditing(true)}
+                    className="flex h-12 items-center gap-2 rounded-xl border-2 border-indigo px-4 text-base font-semibold text-indigo"
+                    data-testid="edit-pandal-open"
+                  >
+                    {t("editPandal")}
+                  </button>
+                  <button
+                    onClick={() => setConfirm({ kind: "pandal" })}
+                    className="flex h-12 items-center gap-2 rounded-xl border-2 border-vermilion px-4 text-base font-semibold text-vermilion-ink"
+                    data-testid="delete-pandal"
+                  >
+                    <TrashIcon /> {t("deletePandal")}
+                  </button>
+                </>
               )}
             </div>
           </div>
         </aside>
       </div>
+
+      {editing && user && (
+        <EditPandal
+          pandal={p}
+          userId={user.id}
+          onClose={() => setEditing(false)}
+          onSaved={(message) => {
+            setToast(message);
+            void load();
+          }}
+        />
+      )}
 
       {confirm?.kind === "pandal" && (
         <ConfirmModal
@@ -364,9 +572,9 @@ export default function PandalDetailClient({ id }: { id: string }) {
       )}
       {confirm?.kind === "photo" && (
         <ConfirmModal
-          title={t("deletePhotoAsk")}
-          body={t("deletePhotoBody")}
-          confirmLabel={t("deletePhoto")}
+          title={t(isOwner ? "removePhotoAsk" : "deletePhotoAsk")}
+          body={t(isOwner ? "removePhotoBody" : "deletePhotoBody")}
+          confirmLabel={t(isOwner ? "removePhoto" : "deletePhoto")}
           onClose={() => setConfirm(null)}
           onConfirm={async () => {
             const u = requireUser(t("signInDelete"));
@@ -386,7 +594,22 @@ export default function PandalDetailClient({ id }: { id: string }) {
       {viewer != null && (
         <PhotoLightbox photos={p.photos} start={viewer} name={p.name} onClose={() => setViewer(null)} />
       )}
+      {celebrate && <Celebrate name={p.name} onDone={() => setCelebrate(false)} />}
     </main>
+  );
+}
+
+function SeasonNote({ pandal, lang }: { pandal: PandalDetail; lang: "en" | "hi" | "bn" }) {
+  const { t } = useI18n();
+  const created = new Date(pandal.created_at);
+  const season = seasonFor(created);
+  if (!season) return null;
+  return (
+    <div className="mt-2 space-y-1 text-sm text-ink-2" data-testid="season-note">
+      <p>{t("addedOn", { date: formatDay(istDate(created), lang) })}</p>
+      <p>{t("untilDussehra", { date: formatDay(season.endsOn, lang) })}</p>
+      {pandal.kind === "ravan" && <p>{t("ravanWhen", { date: formatDay(season.endsOn, lang) })}</p>}
+    </div>
   );
 }
 

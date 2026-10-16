@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertIcon } from "@/components/icons";
 import { PageBar } from "@/components/PageBar";
 import { useAuth } from "@/lib/auth";
+import { markCelebrate } from "@/lib/celebrate";
 import { LIMITS, TAGS } from "@/lib/config";
 import { createPandal, findDuplicates, getPandal, uploadPhoto } from "@/lib/data";
 import { errorKey } from "@/lib/errors";
@@ -13,11 +14,12 @@ import { useI18n, type Key } from "@/lib/i18n";
 import { formatDistance } from "@/lib/geo";
 import { compressPhoto } from "@/lib/image";
 import { photoStore, type StoredPhoto } from "@/lib/photo-store";
-import type { LatLng, PandalSummary } from "@/lib/types";
+import type { LatLng, PandalSummary, PlaceKind } from "@/lib/types";
 import { PhotoUploader, type PendingPhoto } from "./PhotoUploader";
 import { PinPicker } from "./PinPicker";
 
 interface Draft {
+  kind: PlaceKind;
   name: string;
   description: string;
   address: string;
@@ -31,13 +33,19 @@ interface Draft {
   createdId: string | null;
 }
 
-const EMPTY: Draft = { name: "", description: "", address: "", city: "", tags: [], pin: null, ack: false, pendingId: null, createdId: null };
+const EMPTY: Draft = { kind: "pandal", name: "", description: "", address: "", city: "", tags: [], pin: null, ack: false, pendingId: null, createdId: null };
 const DRAFT_KEY = "pandal-hop:add-draft";
 
 function loadDraft(): Draft {
   try {
     const raw = sessionStorage.getItem(DRAFT_KEY);
-    return raw ? { ...EMPTY, ...(JSON.parse(raw) as Partial<Draft>) } : EMPTY;
+    if (!raw) return EMPTY;
+    const parsed = JSON.parse(raw) as Partial<Draft>;
+    return {
+      ...EMPTY,
+      ...parsed,
+      kind: parsed.kind === "ramleela" || parsed.kind === "ravan" ? parsed.kind : "pandal",
+    };
   } catch {
     return EMPTY;
   }
@@ -218,7 +226,10 @@ export default function AddClient() {
 
   const finish = (id: string) => {
     finished.current = true; // stop the persist effect from re-saving on the way out
-    if (!existingId) saveDraft(null);
+    if (!existingId) {
+      saveDraft(null);
+      markCelebrate(id);
+    }
     void photoStore.del(photoKey);
     router.replace(`/pandal/${id}`);
   };
@@ -246,6 +257,7 @@ export default function AddClient() {
             address: draft.address,
             city: draft.city,
             tags: draft.tags,
+            kind: draft.kind,
             lat: draft.pin!.lat,
             lng: draft.pin!.lng,
           },
@@ -349,7 +361,7 @@ export default function AddClient() {
               {locked ? (
                 <p className="text-base text-ink-2">{t("locationSaved")}</p>
               ) : (
-                <PinPicker value={draft.pin} onChange={(p) => update("pin", p)} />
+                <PinPicker value={draft.pin} kind={draft.kind} onChange={(p) => update("pin", p)} />
               )}
               {fieldErr(!draft.pin) && (
                 <p className="mt-1 text-base font-medium text-vermilion-ink" role="alert">
@@ -367,7 +379,61 @@ export default function AddClient() {
               <h2 id="what-h" className="text-lg font-bold">
                 {t("whatCalled")}
               </h2>
-              <Field fieldId="name" label={t("pandalName")} required error={fieldErr(!nameOk) ? t("nameError") : null}>
+              <fieldset>
+                <legend className="mb-1.5 text-base font-semibold">{t("whatKind")}</legend>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    aria-pressed={draft.kind === "pandal"}
+                    disabled={locked}
+                    onClick={() => update("kind", "pandal")}
+                    className={`min-h-12 rounded-xl border-2 px-2 text-sm ${
+                      draft.kind === "pandal"
+                        ? "border-vermilion bg-paper font-semibold text-vermilion-ink"
+                        : "border-line bg-paper"
+                    }`}
+                    data-testid="kind-pandal"
+                  >
+                    {t("kindPandal")}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={draft.kind === "ramleela"}
+                    disabled={locked}
+                    onClick={() => update("kind", "ramleela")}
+                    className={`min-h-12 rounded-xl border-2 px-2 text-sm ${
+                      draft.kind === "ramleela"
+                        ? "border-ramleela bg-ramleela-soft font-semibold text-ramleela"
+                        : "border-line bg-paper"
+                    }`}
+                    data-testid="kind-ramleela"
+                  >
+                    {t("kindRamleela")}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={draft.kind === "ravan"}
+                    disabled={locked}
+                    onClick={() => update("kind", "ravan")}
+                    className={`min-h-12 rounded-xl border-2 px-2 text-sm ${
+                      draft.kind === "ravan"
+                        ? "border-ravan bg-ravan-soft font-semibold text-ravan"
+                        : "border-line bg-paper"
+                    }`}
+                    data-testid="kind-ravan"
+                  >
+                    {t("kindRavan")}
+                  </button>
+                </div>
+                {draft.kind === "ramleela" && <p className="mt-2 text-sm text-ink-2">{t("ramleelaNote")}</p>}
+                {draft.kind === "ravan" && <p className="mt-2 text-sm text-ink-2">{t("ravanNote")}</p>}
+              </fieldset>
+              <Field
+                fieldId="name"
+                label={draft.kind === "ramleela" ? t("ramleelaName") : draft.kind === "ravan" ? t("ravanName") : t("pandalName")}
+                required
+                error={fieldErr(!nameOk) ? t("nameError") : null}
+              >
                 {(id) => (
                   <input
                     id={id}
@@ -377,7 +443,13 @@ export default function AddClient() {
                     disabled={locked}
                     autoComplete="off"
                     className="h-12 w-full rounded-xl border-2 border-line bg-paper px-3 disabled:opacity-70"
-                    placeholder={t("namePlaceholder")}
+                    placeholder={
+                      draft.kind === "ramleela"
+                        ? t("ramleelaPlaceholder")
+                        : draft.kind === "ravan"
+                          ? t("ravanPlaceholder")
+                          : t("namePlaceholder")
+                    }
                   />
                 )}
               </Field>

@@ -50,6 +50,21 @@ export function PandalCard({
             {p.address ?? p.city}
           </p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {p.kind === "ramleela" && (
+              <span className="rounded-full bg-ramleela-soft px-2 py-0.5 text-xs font-semibold text-ramleela">
+                {t("kindRamleela")}
+              </span>
+            )}
+            {p.kind === "ravan" && (
+              <span className="rounded-full bg-ravan-soft px-2 py-0.5 text-xs font-semibold text-ravan">
+                {t("kindRavan")}
+              </span>
+            )}
+            {p.closed_count > 0 && (
+              <span className="rounded-full border border-ink-2 px-2 py-0.5 text-xs font-semibold text-ink-2">
+                {t("closedBadge")}
+              </span>
+            )}
             <CrowdBadge crowd={p.crowd} />
             {p.status === "needs_review" && (
               <span className="rounded-full border border-ink-2 px-2 py-0.5 text-xs font-semibold text-ink-2">

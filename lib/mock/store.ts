@@ -9,6 +9,7 @@ import { LIMITS } from "../config";
 import { AppError } from "../errors";
 import { distanceM, inBounds, boundsCenter } from "../geo";
 import { buildFixtures, type FixturePandal } from "../fixtures/pandals";
+import { placeInSeason } from "../season";
 import type {
   Bounds,
   Cluster,
@@ -19,6 +20,7 @@ import type {
   PandalDetail,
   PandalSummary,
   Photo,
+  PlaceNote,
 } from "../types";
 
 declare global {
@@ -123,11 +125,21 @@ function summary(p: FixturePandal, distance: number | null): PandalSummary {
     lng: p.lng,
     tags: p.tags,
     status: p.status,
+    kind: p.kind ?? "pandal",
+    created_at: p.created_at,
+    closed_count: (p.notes ?? []).filter((n) => n.status === "closed").length,
+    gone_count: (p.notes ?? []).filter((n) => n.status === "not_there").length,
     cover_url: cover(p),
     distance_m: distance,
     crowd: latestCrowd(p),
   };
 }
+
+function listed(p: FixturePandal): boolean {
+  return placeInSeason(p.created_at) && (p.notes ?? []).filter((n) => n.status === "not_there").length < 2;
+}
+
+let mockViewer: string | null = null;
 
 function byDistanceThenId(a: { d: number; p: FixturePandal }, b: { d: number; p: FixturePandal }) {
   return a.d - b.d || a.p.id.localeCompare(b.p.id);
@@ -143,7 +155,7 @@ export const mockStore = {
     await latency();
     const rows = db()
       .map((p) => ({ p, d: distanceM({ lat, lng }, p) }))
-      .filter((x) => x.d <= LIMITS.nearbyRadiusM)
+      .filter((x) => listed(x.p) && x.d <= LIMITS.nearbyRadiusM)
       .sort(byDistanceThenId)
       .slice(0, LIMITS.nearbyLimit + 1);
     return {
@@ -156,7 +168,7 @@ export const mockStore = {
     await latency();
     const c = boundsCenter(b);
     const rows = db()
-      .filter((p) => inBounds(p, b))
+      .filter((p) => listed(p) && inBounds(p, b))
       .map((p) => ({ p, d: distanceM(c, p) }))
       .sort(byDistanceThenId)
       .slice(0, LIMITS.boundsLimit + 1);
@@ -172,7 +184,7 @@ export const mockStore = {
     const cell = Math.max(cellDeg, floor);
     const cells = new Map<string, { lat: number; lng: number; count: number }>();
     for (const p of db()) {
-      if (!inBounds(p, b)) continue;
+      if (!listed(p) || !inBounds(p, b)) continue;
       const key = `${Math.floor(p.lng / cell)}:${Math.floor(p.lat / cell)}`;
       const c = cells.get(key) ?? { lat: 0, lng: 0, count: 0 };
       c.lat += p.lat;
@@ -186,7 +198,7 @@ export const mockStore = {
   async get(id: string): Promise<PandalDetail | null> {
     await latency();
     const p = db().find((x) => x.id === id);
-    if (!p) return null;
+    if (!p || !placeInSeason(p.created_at)) return null;
     const photos: Photo[] = [...p.photos]
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
       .map((ph) => ({ ...ph, pandal_id: p.id }));
@@ -196,6 +208,7 @@ export const mockStore = {
       created_by: p.created_by,
       created_at: p.created_at,
       photos,
+      my_note: p.notes?.find((n) => n.user_id === mockViewer)?.status ?? null,
     };
   },
 
@@ -228,6 +241,7 @@ export const mockStore = {
       lat: input.lat,
       lng: input.lng,
       tags: input.tags,
+      kind: input.kind,
       status: "active",
       created_by: uid,
       created_at: new Date().toISOString(),
@@ -290,6 +304,33 @@ export const mockStore = {
     }
   },
 
+  async updatePandal(
+    id: string,
+    uid: string,
+    input: { name: string; description: string; address: string; tags: string[]; kind: NewPandal["kind"] },
+  ): Promise<void> {
+    await latency();
+    const p = db().find((x) => x.id === id);
+    if (!p || p.created_by !== uid) throw new AppError("PERMISSION");
+    p.name = input.name.trim();
+    p.description = input.description.trim() || null;
+    p.address = input.address.trim() || null;
+    p.tags = input.tags;
+    p.kind = input.kind;
+    persist();
+  },
+
+  async setPlaceNote(id: string, status: PlaceNote | null, uid: string): Promise<void> {
+    await latency();
+    const p = db().find((x) => x.id === id);
+    if (!p) throw new AppError("NOT_FOUND");
+    mockViewer = uid;
+    const notes = (p.notes ?? []).filter((n) => n.user_id !== uid);
+    if (status) notes.push({ user_id: uid, status });
+    p.notes = notes;
+    persist();
+  },
+
   async deletePandal(id: string, uid: string): Promise<void> {
     await latency();
     const list = db();
@@ -306,7 +347,7 @@ export const mockStore = {
     for (const p of db()) {
       const i = p.photos.findIndex((ph) => ph.id === photoId);
       if (i >= 0) {
-        if (p.photos[i].user_id !== uid) throw new AppError("PERMISSION");
+        if (p.created_by !== uid && p.photos[i].user_id !== uid) throw new AppError("PERMISSION");
         p.photos.splice(i, 1);
         persist();
         return;

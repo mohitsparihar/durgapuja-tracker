@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PhotoDots } from "@/components/detail/PhotoDots";
 import { BackIcon, CloseIcon } from "@/components/icons";
 import { useI18n } from "@/lib/i18n";
 import type { Photo } from "@/lib/types";
@@ -25,7 +26,11 @@ export function PhotoLightbox({
 
   const step = useCallback(
     (dir: -1 | 1) => {
-      setIndex((i) => (i + dir + count) % count);
+      setIndex((i) => {
+        const next = i + dir;
+        if (next < 0 || next >= count) return i;
+        return next;
+      });
     },
     [count],
   );
@@ -89,50 +94,49 @@ export function PhotoLightbox({
           drag.current = null;
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element -- visitor photos are stored outside the image optimizer */}
-        <img
-          key={photo.id}
-          src={photo.url}
-          alt={t("photoOf", { name })}
-          className="h-full w-full object-contain"
-          draggable={false}
-        />
-        {count > 1 && (
-          <>
-            <button
-              type="button"
-              onClick={() => step(-1)}
-              className="absolute left-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-black/50"
-              aria-label={t("photoPrev")}
-              data-testid="photo-prev"
-            >
-              <BackIcon className="h-7 w-7" />
-            </button>
-            <button
-              type="button"
-              onClick={() => step(1)}
-              className="absolute right-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-black/50"
-              aria-label={t("photoNext")}
-              data-testid="photo-next"
-            >
-              <BackIcon className="h-7 w-7 rotate-180" />
-            </button>
-          </>
+        <div className="h-full overflow-hidden">
+          <div
+            className="flex h-full transition-transform duration-300 ease-out motion-reduce:transition-none"
+            style={{
+              width: `${count * 100}%`,
+              transform: `translateX(-${(index * 100) / count}%)`,
+            }}
+          >
+            {photos.map((ph) => (
+              <div key={ph.id} className="h-full shrink-0" style={{ width: `${100 / count}%` }}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- visitor photos are stored outside the image optimizer */}
+                <img src={ph.url} alt={t("photoOf", { name })} className="h-full w-full object-contain" draggable={false} />
+              </div>
+            ))}
+          </div>
+        </div>
+        {index > 0 && (
+          <button
+            type="button"
+            onClick={() => step(-1)}
+            className="absolute left-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-black/50"
+            aria-label={t("photoPrev")}
+            data-testid="photo-prev"
+          >
+            <BackIcon className="h-7 w-7" />
+          </button>
+        )}
+        {index < count - 1 && (
+          <button
+            type="button"
+            onClick={() => step(1)}
+            className="absolute right-2 top-1/2 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-black/50"
+            aria-label={t("photoNext")}
+            data-testid="photo-next"
+          >
+            <BackIcon className="h-7 w-7 rotate-180" />
+          </button>
         )}
       </div>
 
       {count > 1 && (
-        <div className="flex h-12 shrink-0 items-center justify-center gap-2" style={{ paddingBottom: "var(--safe-b)" }}>
-          {photos.map((ph, i) => (
-            <button
-              key={ph.id}
-              type="button"
-              onClick={() => setIndex(i)}
-              aria-label={t("photoPosition", { n: i + 1, total: count })}
-              aria-current={i === index ? "true" : undefined}
-              className={`h-2.5 rounded-full ${i === index ? "w-6 bg-ivory" : "w-2.5 bg-ivory/40"}`}
-            />
-          ))}
+        <div className="flex h-12 shrink-0 items-center justify-center" style={{ paddingBottom: "var(--safe-b)" }}>
+          <PhotoDots count={count} index={index} />
         </div>
       )}
     </div>

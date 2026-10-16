@@ -18,6 +18,10 @@
   --vermilion-ink: #a81c2f;
   --marigold: #f2a900;
   --marigold-soft: #fde7a8;
+  --ramleela: #0f766e;
+  --ramleela-soft: #ccfbf1;
+  --ravan: #ea580c;
+  --ravan-soft: #ffedd5;
 
   --crowd-low: #15803d;
   --crowd-medium: #a16207;
@@ -48,6 +52,10 @@
   --color-vermilion-ink: var(--vermilion-ink);
   --color-marigold: var(--marigold);
   --color-marigold-soft: var(--marigold-soft);
+  --color-ramleela: var(--ramleela);
+  --color-ramleela-soft: var(--ramleela-soft);
+  --color-ravan: var(--ravan);
+  --color-ravan-soft: var(--ravan-soft);
   --font-sans: var(--font-hind), system-ui, sans-serif;
   --font-display: var(--font-yatra), var(--font-hind), serif;
 }

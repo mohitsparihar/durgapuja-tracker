@@ -3,8 +3,8 @@
 import { Map, Marker, useApiIsLoaded, useMap } from "@vis.gl/react-google-maps";
 import { useEffect } from "react";
 import { GoogleMapFrame, INDIA_CAMERA, INDIA_ZOOM } from "@/components/maps/GoogleMapFrame";
-import { pandalPinIcon } from "@/components/maps/markerIcons";
-import type { LatLng } from "@/lib/types";
+import { placePinIcon } from "@/components/maps/markerIcons";
+import type { LatLng, PlaceKind } from "@/lib/types";
 
 function Follow({ pinAt, focusKey }: { pinAt: LatLng | null; focusKey: number }) {
   const map = useMap();
@@ -18,13 +18,13 @@ function Follow({ pinAt, focusKey }: { pinAt: LatLng | null; focusKey: number })
   return null;
 }
 
-function Pin({ at, onPick }: { at: LatLng; onPick: (p: LatLng) => void }) {
+function Pin({ at, onPick, kind }: { at: LatLng; onPick: (p: LatLng) => void; kind: PlaceKind }) {
   const ready = useApiIsLoaded();
   if (!ready) return null;
   return (
     <Marker
       position={at}
-      icon={pandalPinIcon(true, false)}
+      icon={placePinIcon(kind, true, false)}
       draggable
       title="Pandal location — drag to adjust"
       onDragEnd={(e) => {
@@ -40,10 +40,12 @@ export default function PinMap({
   pinAt,
   focusKey,
   onPick,
+  kind,
 }: {
   pinAt: LatLng | null;
   focusKey: number;
   onPick: (p: LatLng) => void;
+  kind: PlaceKind;
 }) {
   return (
     <GoogleMapFrame>
@@ -65,7 +67,7 @@ export default function PinMap({
         }}
       >
         <Follow pinAt={pinAt} focusKey={focusKey} />
-        {pinAt && <Pin at={pinAt} onPick={onPick} />}
+        {pinAt && <Pin at={pinAt} onPick={onPick} kind={kind} />}
       </Map>
     </GoogleMapFrame>
   );

@@ -59,7 +59,7 @@ export function PhotoUploader({
                     type="button"
                     onClick={() => onRemove(p.key)}
                     className="absolute right-1 top-1 grid h-12 w-12 place-items-center rounded-full bg-indigo/75 text-ivory"
-                    aria-label={t("removePhoto")}
+                    aria-label={t("removeThisPhoto")}
                   >
                     <CloseIcon />
                   </button>

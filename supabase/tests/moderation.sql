@@ -125,6 +125,35 @@ begin
   raise notice 'PASS: non-owner cannot edit/delete others'' rows';
 end $$;
 
+-- B uploads onto A's pandal. C cannot delete it; A (created_by) can.
+do $$
+declare v uuid;
+begin
+  insert into public.photos (pandal_id, storage_path)
+  values (current_setting('t.p1')::uuid,
+          '00000000-0000-4000-8000-00000000000b/' || current_setting('t.p1') || '/theirs.jpg')
+  returning id into v;
+  perform set_config('t.phb', v::text, false);
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-00000000000c","role":"authenticated"}', true);
+do $$
+declare n int;
+begin
+  delete from public.photos where id = current_setting('t.phb')::uuid;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'FAIL: user C deleted a photo on A''s pandal'; end if;
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-00000000000a","role":"authenticated"}', true);
+do $$
+declare n int;
+begin
+  delete from public.photos where id = current_setting('t.phb')::uuid;
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'FAIL: owner could not delete a photo uploaded by someone else'; end if;
+  raise notice 'PASS: pandal owner can delete a photo another user uploaded; a third user cannot';
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-00000000000b","role":"authenticated"}', true);
+
 -- Users cannot call status-changing / trigger functions directly.
 do $$ begin
   perform public.pandal_flag_threshold();

@@ -372,6 +372,20 @@ export default function HomeClient() {
           </span>
         )}
       </div>
+      <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-2" data-testid="place-legend">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-vermilion" aria-hidden />
+          {t("kindPandal")}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-ramleela" aria-hidden />
+          {t("kindRamleela")}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-ravan" aria-hidden />
+          {t("kindRavan")}
+        </span>
+      </p>
       {mode === "nearby" && ref?.kind === "gps" && (
         <p className="text-sm text-ink-2">{t("withinKm", { km: LIMITS.nearbyRadiusM / 1000 })}</p>
       )}

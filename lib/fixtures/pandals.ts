@@ -2,7 +2,7 @@
  * DEV-ONLY fixtures for DATA_MOCK mode. Names and positions are generated around real
  * neighbourhoods but are NOT real pandal data — never import these into production.
  */
-import type { CrowdLevel, ItemStatus } from "../types";
+import type { CrowdLevel, ItemStatus, PlaceKind, PlaceNote } from "../types";
 
 export interface FixturePhoto {
   id: string;
@@ -29,6 +29,9 @@ export interface FixturePandal {
   lat: number;
   lng: number;
   tags: string[];
+  /** Omitted on generated fixtures; those stay Durga pandals. */
+  kind?: PlaceKind;
+  notes?: { user_id: string; status: PlaceNote }[];
   status: ItemStatus;
   created_by: string;
   created_at: string;

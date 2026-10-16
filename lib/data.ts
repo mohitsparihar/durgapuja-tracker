@@ -7,6 +7,7 @@
 import { IS_MOCK, LIMITS, PHOTO_BUCKET, SUPABASE_URL } from "./config";
 import { AppError } from "./errors";
 import { mockStore } from "./mock/store";
+import { normalizeKind, placeInSeason } from "./season";
 import { supabaseBrowser } from "./supabase/client";
 import type {
   Bounds,
@@ -18,6 +19,7 @@ import type {
   PandalDetail,
   PandalSummary,
   Photo,
+  PlaceNote,
 } from "./types";
 
 interface RpcRow {
@@ -34,6 +36,10 @@ interface RpcRow {
   crowd_level: CrowdLevel | null;
   crowd_wait: number | null;
   crowd_at: string | null;
+  kind?: string | null;
+  created_at?: string | null;
+  closed_count?: number | null;
+  gone_count?: number | null;
 }
 
 export function photoUrl(path: string): string {
@@ -53,6 +59,10 @@ function toSummary(r: RpcRow, keepDistance: boolean): PandalSummary {
     lng: r.lng,
     tags: r.tags ?? [],
     status: r.status,
+    kind: normalizeKind(r.kind),
+    created_at: r.created_at ?? undefined,
+    closed_count: r.closed_count ?? 0,
+    gone_count: r.gone_count ?? 0,
     cover_url: r.cover_path ? photoUrl(r.cover_path) : null,
     distance_m: keepDistance ? r.distance_m : null,
     crowd:
@@ -62,10 +72,16 @@ function toSummary(r: RpcRow, keepDistance: boolean): PandalSummary {
   };
 }
 
+function isListed(p: PandalSummary): boolean {
+  if (p.created_at && !placeInSeason(p.created_at)) return false;
+  return p.gone_count < 2;
+}
+
 function truncate(rows: RpcRow[], limit: number, keepDistance: boolean): ListResult {
+  const items = rows.map((r) => toSummary(r, keepDistance)).filter(isListed);
   return {
-    items: rows.slice(0, limit).map((r) => toSummary(r, keepDistance)),
-    truncated: rows.length > limit,
+    items: items.slice(0, limit),
+    truncated: rows.length > limit || items.length > limit,
   };
 }
 
@@ -119,9 +135,20 @@ export async function getPandal(id: string): Promise<PandalDetail | null> {
   const d = data as Omit<PandalDetail, "photos" | "cover_url" | "distance_m"> & {
     photos: Omit<Photo, "url" | "pandal_id">[];
   };
+  if (d.created_at && !placeInSeason(d.created_at)) return null;
   const photos: Photo[] = d.photos.map((p) => ({ ...p, pandal_id: d.id, url: photoUrl(p.storage_path) }));
   const cover = photos.find((p) => p.status === "active");
-  return { ...d, tags: d.tags ?? [], photos, cover_url: cover?.url ?? null, distance_m: null };
+  return {
+    ...d,
+    kind: normalizeKind(d.kind),
+    tags: d.tags ?? [],
+    photos,
+    cover_url: cover?.url ?? null,
+    distance_m: null,
+    closed_count: d.closed_count ?? 0,
+    gone_count: d.gone_count ?? 0,
+    my_note: d.my_note === "closed" || d.my_note === "not_there" ? d.my_note : null,
+  };
 }
 
 export async function findDuplicates(lat: number, lng: number, name: string): Promise<PandalSummary[]> {
@@ -147,6 +174,7 @@ export async function createPandal(input: NewPandal, uid: string, id: string): P
       address: input.address.trim() || null,
       city: input.city.trim() || null,
       tags: input.tags,
+      kind: input.kind,
       location: `SRID=4326;POINT(${input.lng} ${input.lat})`,
     });
   if (error) {
@@ -158,6 +186,46 @@ export async function createPandal(input: NewPandal, uid: string, id: string): P
     throw error;
   }
   return id;
+}
+
+/** Owner-only. The pin and city stay as they were; those columns are not granted to clients. */
+export async function updatePandal(
+  id: string,
+  input: { name: string; description: string; address: string; tags: string[]; kind: NewPandal["kind"] },
+  uid: string,
+) {
+  if (IS_MOCK) return mockStore.updatePandal(id, uid, input);
+  const { error, count } = await supabaseBrowser()
+    .from("pandals")
+    .update(
+      {
+        name: input.name.trim(),
+        description: input.description.trim() || null,
+        address: input.address.trim() || null,
+        tags: input.tags,
+        kind: input.kind,
+      },
+      { count: "exact" },
+    )
+    .eq("id", id);
+  if (error) throw error;
+  if (!count) throw new AppError("PERMISSION");
+}
+
+/** A visitor marks a place closed or not there. Passing null clears their mark. */
+export async function setPlaceNote(id: string, status: PlaceNote | null, uid: string) {
+  if (IS_MOCK) return mockStore.setPlaceNote(id, status, uid);
+  const sb = supabaseBrowser();
+  if (!status) {
+    const { error } = await sb.from("place_notes").delete().eq("pandal_id", id).eq("user_id", uid);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await sb.from("place_notes").upsert(
+    { pandal_id: id, user_id: uid, status },
+    { onConflict: "pandal_id,user_id" },
+  );
+  if (error) throw error;
 }
 
 /**

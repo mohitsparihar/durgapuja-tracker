@@ -5,7 +5,7 @@ import { useState } from "react";
 import { LocateIcon } from "@/components/icons";
 import { useI18n } from "@/lib/i18n";
 import { SearchBar } from "@/components/SearchBar";
-import type { LatLng } from "@/lib/types";
+import type { LatLng, PlaceKind } from "@/lib/types";
 
 const PinMap = dynamic(() => import("./PinMap"), {
   ssr: false,
@@ -16,7 +16,15 @@ const PinMap = dynamic(() => import("./PinMap"), {
  * Three ways to place the pin, none of which need dragging: use my location, tap the
  * map, or search a place. Dragging the pin also works for fine-tuning.
  */
-export function PinPicker({ value, onChange }: { value: LatLng | null; onChange: (p: LatLng) => void }) {
+export function PinPicker({
+  value,
+  onChange,
+  kind,
+}: {
+  value: LatLng | null;
+  onChange: (p: LatLng) => void;
+  kind: PlaceKind;
+}) {
   const { t } = useI18n();
   const [focusKey, setFocusKey] = useState(0);
   const [gps, setGps] = useState<"idle" | "busy" | "error">("idle");
@@ -62,7 +70,7 @@ export function PinPicker({ value, onChange }: { value: LatLng | null; onChange:
         </p>
       )}
       <div className="relative mt-3 h-[min(52dvh,440px)] min-h-72 overflow-hidden rounded-2xl border-2 border-line lg:h-[min(560px,calc(100dvh-280px))] lg:min-h-80" data-testid="pin-map">
-        <PinMap pinAt={value} focusKey={focusKey} onPick={(p) => set(p, false)} />
+        <PinMap pinAt={value} focusKey={focusKey} kind={kind} onPick={(p) => set(p, false)} />
         {!value && (
           <p className="pointer-events-none absolute left-[72px] right-3 top-3 z-[450] rounded-xl bg-paper/95 px-3 py-2 text-center text-sm font-medium shadow">
             {t("tapMap")}

@@ -1,4 +1,8 @@
 export type CrowdLevel = "low" | "medium" | "high" | "very_high";
+/** A Durga pandal, a Ramleela ground, or the place the Ravana effigy is burned on Dussehra. */
+export type PlaceKind = "pandal" | "ramleela" | "ravan";
+/** A visitor saying the place has closed, or that it is not there. */
+export type PlaceNote = "closed" | "not_there";
 export type ItemStatus = "active" | "needs_review";
 
 export interface CrowdReport {
@@ -16,6 +20,11 @@ export interface PandalSummary {
   lng: number;
   tags: string[];
   status: ItemStatus;
+  kind: PlaceKind;
+  /** When the listing was added. Missing on older list responses. */
+  created_at?: string;
+  closed_count: number;
+  gone_count: number;
   cover_url: string | null;
   /** Metres from the reference point, when the list is distance-sorted. */
   distance_m: number | null;
@@ -37,6 +46,8 @@ export interface PandalDetail extends PandalSummary {
   created_by: string | null;
   created_at: string;
   photos: Photo[];
+  /** The signed-in visitor's own mark, if they have set one. */
+  my_note: PlaceNote | null;
 }
 
 export interface Cluster {
@@ -68,6 +79,7 @@ export interface NewPandal {
   address: string;
   city: string;
   tags: string[];
+  kind: PlaceKind;
   lat: number;
   lng: number;
 }

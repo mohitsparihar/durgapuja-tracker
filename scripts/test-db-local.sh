@@ -31,6 +31,14 @@ echo "▸ supabase shim"
 echo "▸ migration (applied twice to prove it is re-runnable)"
 "${PSQL[@]}" -f supabase/migrations/001_init.sql
 "${PSQL[@]}" -f supabase/migrations/001_init.sql
+echo "▸ place kind (applied twice to prove it is re-runnable)"
+"${PSQL[@]}" -f supabase/migrations/002_place_kind.sql
+"${PSQL[@]}" -f supabase/migrations/002_place_kind.sql
+"${PSQL[@]}" -f supabase/migrations/003_owner_photo_delete.sql
+"${PSQL[@]}" -f supabase/migrations/003_owner_photo_delete.sql
+echo "▸ ravan dahan and season (applied twice to prove it is re-runnable)"
+"${PSQL[@]}" -f supabase/migrations/004_ravan_and_season.sql
+"${PSQL[@]}" -f supabase/migrations/004_ravan_and_season.sql
 echo "▸ moderation / permissions / quota / RPC tests"
 out=$("${PSQL[@]}" -f supabase/tests/moderation.sql 2>&1) || { echo "$out" | grep -E "PASS|FAIL|ERROR" ; exit 1; }
 echo "$out" | grep -E "PASS|FAIL" | sed -E 's/^psql:[^ ]+ NOTICE:  /  /'

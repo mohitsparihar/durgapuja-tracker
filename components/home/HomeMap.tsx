@@ -3,7 +3,7 @@
 import { Map, Marker, useApiIsLoaded, useMap } from "@vis.gl/react-google-maps";
 import { useEffect } from "react";
 import { GoogleMapFrame, INDIA_CAMERA, INDIA_ZOOM } from "@/components/maps/GoogleMapFrame";
-import { clusterPinIcon, pandalPinIcon, searchPinIcon, userDotIcon } from "@/components/maps/markerIcons";
+import { clusterPinIcon, placePinIcon, searchPinIcon, userDotIcon } from "@/components/maps/markerIcons";
 import { INDIA_BOUNDS } from "@/lib/config";
 import type { Bounds, Cluster, LatLng, PandalSummary } from "@/lib/types";
 
@@ -138,7 +138,7 @@ function Pins({
         <Marker
           key={p.id}
           position={{ lat: p.lat, lng: p.lng }}
-          icon={pandalPinIcon(p.id === selectedId, p.status === "needs_review")}
+          icon={placePinIcon(p.kind === "ramleela" || p.kind === "ravan" ? p.kind : "pandal", p.id === selectedId, p.status === "needs_review")}
           title={p.name}
           zIndex={p.id === selectedId ? 1000 : 1}
           onClick={() => onMarkerSelect(p)}
