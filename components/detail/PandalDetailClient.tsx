@@ -9,6 +9,7 @@ import { FlagButton } from "@/components/FlagButton";
 import { AlertIcon, CameraIcon, DirectionsIcon, PinIcon, TrashIcon } from "@/components/icons";
 import { ConfirmModal, Toast } from "@/components/Modal";
 import { PageBar } from "@/components/PageBar";
+import { PhotoLightbox } from "@/components/detail/PhotoLightbox";
 import { PhotoImg } from "@/components/PhotoImg";
 import { ErrorBanner } from "@/components/StateBanners";
 import { useAuth } from "@/lib/auth";
@@ -38,6 +39,7 @@ export default function PandalDetailClient({ id }: { id: string }) {
   const [toast, setToast] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ kind: "pandal" } | { kind: "photo"; photo: Photo } | null>(null);
   const [showReport, setShowReport] = useState(false);
+  const [viewer, setViewer] = useState<number | null>(null);
   const [resumed, setResumed] = useState<PendingAction | null>(null);
   const req = useRef(0);
 
@@ -139,7 +141,15 @@ export default function PandalDetailClient({ id }: { id: string }) {
             data-testid="detail-cover"
           >
             {coverPhoto ? (
-              <PhotoImg src={coverPhoto.url} alt={t("photoOf", { name: p.name })} className="h-full w-full object-cover" eager />
+              <button
+                type="button"
+                onClick={() => setViewer(Math.max(0, p.photos.findIndex((ph) => ph.id === coverPhoto.id)))}
+                className="h-full w-full"
+                aria-label={t("viewPhoto")}
+                data-testid="open-cover"
+              >
+                <PhotoImg src={coverPhoto.url} alt={t("photoOf", { name: p.name })} className="h-full w-full object-cover" eager />
+              </button>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-ivory">
                 <div className="festive-edge absolute inset-x-0 top-0" aria-hidden />
@@ -165,15 +175,22 @@ export default function PandalDetailClient({ id }: { id: string }) {
             </div>
             {p.photos.length > 0 ? (
               <ul className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-3 lg:gap-3" data-testid="gallery">
-                {p.photos.map((ph) => (
+                {p.photos.map((ph, i) => (
                   <li key={ph.id} className="relative aspect-[4/3] overflow-hidden rounded-xl" data-testid="gallery-photo">
-                    <PhotoImg src={ph.url} alt={t("visitorPhoto", { name: p.name })} className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setViewer(i)}
+                      className="absolute inset-0"
+                      aria-label={t("viewPhoto")}
+                    >
+                      <PhotoImg src={ph.url} alt={t("visitorPhoto", { name: p.name })} className="h-full w-full object-cover" />
+                    </button>
                     {ph.status === "needs_review" && (
-                      <span className="absolute left-1.5 top-1.5 rounded-full bg-paper px-2 py-0.5 text-xs font-bold text-ink shadow">
+                      <span className="pointer-events-none absolute left-1.5 top-1.5 z-10 rounded-full bg-paper px-2 py-0.5 text-xs font-bold text-ink shadow">
                         {t("underReview")}
                       </span>
                     )}
-                    <div className="absolute bottom-1 right-1 flex gap-1">
+                    <div className="absolute bottom-1 right-1 z-10 flex gap-1">
                       {user?.id === ph.user_id && (
                         <button
                           onClick={() => setConfirm({ kind: "photo", photo: ph })}
@@ -366,6 +383,9 @@ export default function PandalDetailClient({ id }: { id: string }) {
         />
       )}
       {toast && <Toast message={toast} onDone={dismissToast} />}
+      {viewer != null && (
+        <PhotoLightbox photos={p.photos} start={viewer} name={p.name} onClose={() => setViewer(null)} />
+      )}
     </main>
   );
 }
