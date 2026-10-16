@@ -31,7 +31,7 @@ const pinHtml = (selected: boolean, review: boolean) => `
   </svg></span>`;
 
 const iconCache = new Map<string, L.DivIcon>();
-function pinIcon(selected: boolean, review: boolean): L.DivIcon {
+export function pinIcon(selected: boolean, review: boolean): L.DivIcon {
   const key = `${selected}-${review}`;
   let icon = iconCache.get(key);
   if (!icon) {

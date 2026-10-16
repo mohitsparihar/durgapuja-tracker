@@ -69,3 +69,16 @@ export const storage = {
     }
   },
 };
+
+/** True when the viewport is at least `px` wide (desktop layouts). False during SSR. */
+export function useMinWidth(px: number): boolean {
+  const [ok, setOk] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${px}px)`);
+    const update = () => setOk(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [px]);
+  return ok;
+}

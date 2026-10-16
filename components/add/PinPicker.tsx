@@ -59,7 +59,7 @@ export function PinPicker({ value, onChange }: { value: LatLng | null; onChange:
           Couldn&apos;t get your location. Search the area or tap the map instead.
         </p>
       )}
-      <div className="relative mt-3 h-64 overflow-hidden rounded-2xl border-2 border-line" data-testid="pin-map">
+      <div className="relative mt-3 h-64 overflow-hidden rounded-2xl border-2 border-line lg:h-[min(520px,calc(100dvh-380px))] lg:min-h-80" data-testid="pin-map">
         <PinMap pinAt={value} focusKey={focusKey} onPick={(p) => set(p, false)} />
         {!value && (
           <p className="pointer-events-none absolute left-[72px] right-3 top-3 z-[450] rounded-xl bg-paper/95 px-3 py-2 text-center text-sm font-medium shadow">

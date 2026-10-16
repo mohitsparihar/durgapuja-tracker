@@ -323,9 +323,17 @@ export default function AddClient() {
       <PageBar title={existingId ? `Add photos${existing && existing !== "missing" ? ` — ${existing.name}` : ""}` : "Add a pandal"} />
 
       {/* Not a <form>: the place search inside the pin picker is its own form, and forms can't nest. */}
-      <div className="mx-auto max-w-xl space-y-6 px-4 pt-4" style={{ paddingBottom: "calc(120px + var(--safe-b))" }}>
+      {/* Desktop (lg): pin map on the left (sticky), details + photos on the right. */}
+      <div
+        className={`mx-auto px-4 pt-4 ${
+          existingId
+            ? "max-w-xl lg:max-w-3xl lg:pt-8"
+            : "max-w-xl lg:grid lg:max-w-6xl lg:grid-cols-2 lg:items-start lg:gap-10 lg:px-6 lg:pt-8"
+        }`}
+        style={{ paddingBottom: "calc(120px + var(--safe-b))" }}
+      >
         {!existingId && (
-          <>
+          <div className="space-y-6 lg:sticky lg:top-24">
             {locked && (
               <p className="rounded-xl border-2 border-[var(--crowd-low)] bg-paper px-3 py-2 text-base" role="status">
                 ✓ Pandal saved. Now uploading its photos.
@@ -347,7 +355,12 @@ export default function AddClient() {
                 </p>
               )}
             </section>
+          </div>
+        )}
 
+        <div className={`space-y-6 ${existingId ? "" : "mt-6 lg:mt-0"}`}>
+        {!existingId && (
+          <>
             <section aria-labelledby="what-h" className="space-y-4">
               <h2 id="what-h" className="text-lg font-bold">
                 2. What is it called?
@@ -502,6 +515,7 @@ export default function AddClient() {
             )}
           </div>
         )}
+        </div>
       </div>
 
       {/* Sticky submit, thumb-reachable, clear of the home indicator */}
@@ -509,7 +523,7 @@ export default function AddClient() {
         className="fixed inset-x-0 bottom-0 z-[600] border-t border-line bg-ivory/95 px-4 pt-3 backdrop-blur"
         style={{ paddingBottom: "calc(12px + var(--safe-b))" }}
       >
-        <div className="mx-auto max-w-xl">
+        <div className={`mx-auto max-w-xl lg:flex lg:items-center lg:justify-end lg:gap-4 ${existingId ? "lg:max-w-3xl" : "lg:max-w-6xl lg:px-2"}`}>
           {showErrors && needAck && (
             <p className="mb-2 text-sm font-medium text-vermilion-ink">Confirm it&apos;s a different pandal, or add photos to the existing one.</p>
           )}
@@ -517,7 +531,7 @@ export default function AddClient() {
             type="button"
             onClick={() => void submit()}
             disabled={submitting || stillPreparing}
-            className="h-14 w-full rounded-2xl bg-vermilion text-lg font-bold text-white shadow-[0_6px_18px_rgba(215,38,61,0.35)] disabled:opacity-60"
+            className="h-14 w-full rounded-2xl bg-vermilion text-lg font-bold text-white shadow-[0_6px_18px_rgba(215,38,61,0.35)] disabled:opacity-60 lg:w-80"
             data-testid="add-submit"
           >
             {submitting

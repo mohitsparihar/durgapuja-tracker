@@ -7,7 +7,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { LocateIcon, MinusIcon, PlusIcon } from "@/components/icons";
 import { PandalCard, PandalCardSkeleton } from "@/components/PandalCard";
 import { SearchBar } from "@/components/SearchBar";
-import { ErrorBanner, LocationBanner, OfflineBanner } from "@/components/StateBanners";
+import { ErrorBanner, LocationBanner, LocationPrompt, NearMeChip, OfflineBanner } from "@/components/StateBanners";
 import { useAuth } from "@/lib/auth";
 import { LIMITS } from "@/lib/config";
 import { nearbyPandals, pandalClusters, pandalsInBounds, subscribeCrowd } from "@/lib/data";
@@ -24,7 +24,14 @@ const HomeMap = dynamic(() => import("./HomeMap"), {
   loading: () => <div className="skeleton h-full w-full" aria-label="Loading map" />,
 });
 
-type LocState = "pending" | "granted" | "denied";
+/**
+ * checking: reading the saved permission · ask: show our explainer first · pending: browser
+ * prompt / GPS fix in progress · granted · denied (blocked in browser) · dismissed ("Not now").
+ */
+type LocState = "checking" | "ask" | "pending" | "granted" | "denied" | "dismissed";
+const LOC_DISMISSED_KEY = "pandal-hop:location-dismissed";
+/** Re-sort the nearby list once the visitor has walked this far. */
+const FOLLOW_MOVE_M = 300;
 interface RefPoint extends LatLng {
   label: string;
   kind: "gps" | "place";
@@ -55,7 +62,7 @@ export default function HomeClient() {
   const [view, setView] = useState<MapView | null>(null);
   const [ref, setRef] = useState<RefPoint | null>(null);
   const [userPoint, setUserPoint] = useState<LatLng | null>(null);
-  const [loc, setLoc] = useState<LocState>("pending");
+  const [loc, setLoc] = useState<LocState>("checking");
   const [markers, setMarkers] = useState<PandalSummary[]>([]);
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [area, setArea] = useState<ListState>({ ...EMPTY_LIST, loading: true });
@@ -101,36 +108,98 @@ export default function HomeClient() {
     setLoc((l) => (l === "granted" ? l : "pending"));
     // The browser's `timeout` only starts after the user answers the prompt; if they
     // ignore it, fall back to the all-India + search flow instead of waiting forever.
-    const fallback = setTimeout(() => setLoc((l) => (l === "pending" ? "denied" : l)), 12_000);
+    // No answer isn't a refusal: fall back to "dismissed" (search + Near-me chip), not "blocked".
+    const fallback = setTimeout(() => setLoc((l) => (l === "pending" ? "dismissed" : l)), 12_000);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         clearTimeout(fallback);
         const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setUserPoint(p);
         setLoc("granted");
+        storage.remove(LOC_DISMISSED_KEY);
         if (choiceSeq.current !== seqAtStart) return;
         setRef({ ...p, label: "you", kind: "gps" });
         if (fly) mapApi.current?.flyTo(p, 14);
       },
-      () => {
+      (err) => {
         clearTimeout(fallback);
-        setLoc((l) => (l === "granted" ? l : "denied"));
+        // Only a real refusal means "blocked"; no GPS fix / timeout just falls back to search.
+        setLoc((l) => (l === "granted" ? l : err.code === err.PERMISSION_DENIED ? "denied" : "dismissed"));
       },
       { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
     );
   }, []);
 
-  const pendingFly = useRef(true);
-  const onReady = useCallback(
-    (api: MapApi) => {
-      mapApi.current = api;
-      if (pendingFly.current) {
-        pendingFly.current = false;
-        locate(true);
-      }
-    },
-    [locate],
-  );
+  const onReady = useCallback((api: MapApi) => {
+    mapApi.current = api;
+  }, []);
+
+  // First load: if location was already allowed, go straight to nearby pandals. Otherwise
+  // explain why first (our card), and only then trigger the browser's permission prompt.
+  useEffect(() => {
+    if (!("geolocation" in navigator)) {
+      setLoc("denied");
+      return;
+    }
+    let status: PermissionStatus | null = null;
+    const apply = (state: PermissionState | "unknown") => {
+      if (state === "granted") locate(true);
+      else if (state === "denied") setLoc("denied");
+      else setLoc(storage.get<boolean>(LOC_DISMISSED_KEY) ? "dismissed" : "ask");
+    };
+    const onChange = () => status && apply(status.state);
+    if (navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: "geolocation" })
+        .then((s) => {
+          status = s;
+          s.addEventListener("change", onChange);
+          apply(s.state);
+        })
+        .catch(() => apply("unknown")); // e.g. older Safari: just ask
+    } else {
+      apply("unknown");
+    }
+    return () => status?.removeEventListener("change", onChange);
+  }, [locate]);
+
+  // While location is on, follow the visitor: move the blue dot, and re-sort the nearby list
+  // after they've walked ~300 m (pandal-hopping), unless they chose a place to look at.
+  // Read the current reference point from a ref so the watch callback stays pure
+  // (no side effects inside a state updater, which React may call twice).
+  const refNow = useRef<RefPoint | null>(null);
+  useEffect(() => {
+    refNow.current = ref;
+  }, [ref]);
+  useEffect(() => {
+    if (loc !== "granted" || !("geolocation" in navigator)) return;
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setUserPoint(p);
+        const r = refNow.current;
+        if (r?.kind === "gps" && distanceM(r, p) >= FOLLOW_MOVE_M) {
+          setRef({ ...p, label: "you", kind: "gps" });
+        }
+      },
+      () => {
+        /* keep the last known position */
+      },
+      { enableHighAccuracy: false, maximumAge: 30_000, timeout: 20_000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [loc]);
+
+  const [askedViaCard, setAskedViaCard] = useState(false);
+  const allowLocation = () => {
+    setAskedViaCard(true);
+    locate(true);
+  };
+  const showLocationCard = loc === "ask" || (loc === "pending" && askedViaCard);
+  const dismissLocation = () => {
+    storage.set(LOC_DISMISSED_KEY, true);
+    setLoc("dismissed");
+  };
 
   // ---- Map data: markers at zoom >= 10, otherwise clusters ------------------
   const mapReq = useRef(0);
@@ -197,7 +266,7 @@ export default function HomeClient() {
   const zoomedOut = (view?.zoom ?? 0) < LIMITS.markerMinZoom;
   const mode: "nearby" | "area" | "zoom" | "locating" = ref
     ? "nearby"
-    : loc === "pending"
+    : loc === "pending" || loc === "checking"
       ? "locating"
       : zoomedOut
         ? "zoom"
@@ -211,7 +280,9 @@ export default function HomeClient() {
         ? "Pandals in this area"
         : mode === "locating"
           ? "Finding pandals near you…"
-          : "Zoom in to see pandals";
+          : loc === "denied"
+            ? "Zoom in to see pandals"
+            : "Find pandals near you";
   const list: ListState = mode === "nearby" ? nearby : mode === "area" ? area : EMPTY_LIST;
 
   // Offline fallback: keep the last good list and show it when fetches fail offline.
@@ -315,12 +386,27 @@ export default function HomeClient() {
 
       {mode === "zoom" && !showCached && (
         <EmptyState
-          title="Zoom in to see pandals"
-          body="Tap a bubble on the map or search a place to see individual pandals."
+          title={loc === "denied" ? "Zoom in to see pandals" : "Where are you?"}
+          body={
+            loc === "denied"
+              ? "Tap a bubble on the map or search a place to see individual pandals."
+              : "Use your location to list the closest pandals first — or search a place, or tap a bubble on the map."
+          }
           action={
-            <button onClick={focusSearch} className="h-12 rounded-xl bg-indigo px-4 text-base font-semibold text-ivory">
-              Search a place
-            </button>
+            <div className="flex flex-wrap justify-center gap-2">
+              {loc !== "denied" && (
+                <button
+                  onClick={allowLocation}
+                  className="flex h-12 items-center gap-2 rounded-xl bg-vermilion px-4 text-base font-semibold text-white"
+                  data-testid="list-use-location"
+                >
+                  <LocateIcon /> Use my location
+                </button>
+              )}
+              <button onClick={focusSearch} className="h-12 rounded-xl bg-indigo px-4 text-base font-semibold text-ivory">
+                Search a place
+              </button>
+            </div>
           }
         />
       )}
@@ -361,14 +447,26 @@ export default function HomeClient() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-ivory">
-      <AppHeader ref={headerRef} compact={side}>
+      <AppHeader
+        ref={headerRef}
+        compact={side}
+        actions={
+          <button
+            onClick={addPandal}
+            className="flex h-12 items-center gap-2 rounded-full bg-vermilion pl-4 pr-5 text-base font-bold text-white shadow-[0_4px_14px_rgba(215,38,61,0.45)] active:bg-vermilion-ink"
+            data-testid="add-header"
+          >
+            <PlusIcon className="h-5 w-5" /> Add pandal
+          </button>
+        }
+      >
         <SearchBar onPick={onPlace} />
       </AppHeader>
 
       <div className={`relative flex min-h-0 flex-1 ${side ? "flex-row" : ""}`}>
         {side && (
           <aside
-            className="z-[500] flex h-full w-[min(360px,46vw)] shrink-0 flex-col border-r border-line bg-ivory"
+            className="z-[500] flex h-full w-[min(360px,46vw)] shrink-0 flex-col border-r border-line bg-ivory lg:w-[400px] xl:w-[440px]"
             aria-label="Pandal list"
             data-testid="side-panel"
             style={{ paddingLeft: "var(--safe-l)" }}
@@ -394,12 +492,23 @@ export default function HomeClient() {
             />
           </div>
 
+          {/* First-visit location explainer, centred in the visible part of the map */}
+          {showLocationCard && (
+            <div
+              className="pointer-events-none absolute inset-0 z-[460] grid place-items-center bg-indigo/25 p-4"
+              style={{ paddingBottom: side ? undefined : "calc(var(--sheet-h) + 16px)" }}
+            >
+              <LocationPrompt onAllow={allowLocation} onDismiss={dismissLocation} busy={loc === "pending"} />
+            </div>
+          )}
+
           {/* Top overlays */}
           <div className="pointer-events-none absolute inset-x-0 top-0 z-[450] flex flex-col items-center gap-2 p-2">
             {!online && <OfflineBanner hasCache={cached != null} />}
             {online && loc === "denied" && !ref && (
               <LocationBanner onRetry={() => locate(true)} onSearch={focusSearch} />
             )}
+            {loc === "dismissed" && !ref && <NearMeChip onClick={allowLocation} />}
             {drifted && (
               <button
                 onClick={searchThisArea}
@@ -441,7 +550,7 @@ export default function HomeClient() {
             <button
               onClick={addPandal}
               aria-label="Add pandal"
-              className={`mt-1 flex h-14 items-center justify-center gap-2 rounded-full bg-vermilion text-base font-bold text-white shadow-[0_6px_20px_rgba(215,38,61,0.45)] active:bg-vermilion-ink ${
+              className={`mt-1 flex h-14 items-center justify-center gap-2 rounded-full bg-vermilion text-base font-bold text-white shadow-[0_6px_20px_rgba(215,38,61,0.45)] active:bg-vermilion-ink ${side ? "lg:hidden" : ""} ${
                 fabCompact ? "w-14" : "pl-4 pr-5"
               }`}
               data-testid="add-fab"

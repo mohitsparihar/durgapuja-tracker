@@ -20,7 +20,7 @@ export default function OfflinePage() {
   return (
     <main className="min-h-dvh bg-ivory">
       <AppHeader />
-      <div className="mx-auto max-w-xl px-4 pt-4" style={{ paddingBottom: "calc(24px + var(--safe-b))" }}>
+      <div className="mx-auto max-w-xl px-4 pt-4 lg:max-w-5xl lg:pt-8" style={{ paddingBottom: "calc(24px + var(--safe-b))" }}>
         <div className="flex items-start gap-3 rounded-2xl bg-indigo p-4 text-ivory" role="status" data-testid="offline-banner">
           <WifiOffIcon className="mt-0.5 h-6 w-6 shrink-0 text-marigold" />
           <div>
@@ -41,7 +41,7 @@ export default function OfflinePage() {
             <h2 className="mt-5 text-lg font-bold">
               {cached.title} <span className="text-sm font-normal text-ink-2">· saved {agoLabel(cached.savedAt, now)}</span>
             </h2>
-            <ul className="mt-2 space-y-2">
+            <ul className="mt-2 grid gap-2 lg:grid-cols-2 lg:gap-3">
               {cached.items.map((p) => (
                 <li key={p.id} className="rounded-2xl border border-line bg-paper p-3">
                   <p className="break-words text-[17px] font-semibold leading-snug">{p.name}</p>

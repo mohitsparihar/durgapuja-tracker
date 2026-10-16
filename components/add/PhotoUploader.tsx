@@ -44,7 +44,7 @@ export function PhotoUploader({
   return (
     <div data-testid="photo-uploader">
       {photos.length > 0 && (
-        <ul className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <ul className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-3">
           {photos.map((p) => (
             <li key={p.key} className="overflow-hidden rounded-xl border border-line bg-paper" data-testid="pending-photo" data-status={p.status}>
               <div className="relative aspect-[4/3] bg-indigo-2">
