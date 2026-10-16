@@ -1,14 +1,15 @@
 "use client";
 
-import { agoLabel, freshCrowd, useNow } from "@/lib/time";
+import { useI18n, type Key } from "@/lib/i18n";
+import { freshCrowd, useNow } from "@/lib/time";
 import type { CrowdLevel, CrowdReport } from "@/lib/types";
 import { CrowdIcon } from "./icons";
 
-export const CROWD_META: Record<CrowdLevel, { label: string; hint: string; color: string }> = {
-  low: { label: "Calm", hint: "Walk right in", color: "var(--crowd-low)" },
-  medium: { label: "Moderate", hint: "Short queue", color: "var(--crowd-medium)" },
-  high: { label: "Busy", hint: "Long queue", color: "var(--crowd-high)" },
-  very_high: { label: "Packed", hint: "Very long wait", color: "var(--crowd-very-high)" },
+export const CROWD_META: Record<CrowdLevel, { label: Key; hint: Key; color: string }> = {
+  low: { label: "crowdLow", hint: "crowdLowHint", color: "var(--crowd-low)" },
+  medium: { label: "crowdMedium", hint: "crowdMediumHint", color: "var(--crowd-medium)" },
+  high: { label: "crowdHigh", hint: "crowdHighHint", color: "var(--crowd-high)" },
+  very_high: { label: "crowdVeryHigh", hint: "crowdVeryHighHint", color: "var(--crowd-very-high)" },
 };
 
 /**
@@ -25,6 +26,7 @@ export function CrowdBadge({
   pending?: boolean;
 }) {
   const now = useNow(30_000);
+  const { t, ago } = useI18n();
   const c = freshCrowd(crowd, now);
   const lg = size === "lg";
 
@@ -37,7 +39,7 @@ export function CrowdBadge({
         data-testid="crowd-badge"
       >
         <CrowdIcon level={null} className={lg ? "h-5 w-5" : "h-4 w-4"} />
-        No recent crowd report
+        {t("noRecentCrowd")}
       </span>
     );
   }
@@ -53,13 +55,13 @@ export function CrowdBadge({
       data-level={c.level}
     >
       <CrowdIcon level={c.level} className={lg ? "h-5 w-5" : "h-4 w-4"} />
-      <span>{m.label}</span>
+      <span>{t(m.label)}</span>
       {c.wait_minutes != null && (
         <span className="font-normal opacity-95">
-          · {c.wait_minutes === 0 ? "no wait" : c.wait_minutes >= 60 ? "1 hr+ wait" : `~${c.wait_minutes} min wait`}
+          · {c.wait_minutes === 0 ? t("noWait") : c.wait_minutes >= 60 ? t("hrWait") : t("minWait", { n: c.wait_minutes })}
         </span>
       )}
-      <span className="font-normal opacity-95">· {pending ? "sending…" : agoLabel(c.created_at, now)}</span>
+      <span className="font-normal opacity-95">· {pending ? t("sending") : ago(c.created_at, now)}</span>
     </span>
   );
 }

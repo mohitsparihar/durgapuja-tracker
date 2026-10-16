@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { IS_MOCK } from "@/lib/config";
+import { useI18n } from "@/lib/i18n";
 import { CloseIcon } from "./icons";
 
 export function SignInSheet({
@@ -13,6 +14,7 @@ export function SignInSheet({
   onSignIn: () => Promise<void> | void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const firstBtn = useRef<HTMLButtonElement>(null);
 
@@ -25,7 +27,7 @@ export function SignInSheet({
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-end justify-center" role="presentation">
-      <button aria-label="Close" className="absolute inset-0 bg-indigo/50" onClick={onClose} tabIndex={-1} />
+      <button aria-label={t("close")} className="absolute inset-0 bg-indigo/50" onClick={onClose} tabIndex={-1} />
       <div
         role="dialog"
         aria-modal="true"
@@ -37,18 +39,18 @@ export function SignInSheet({
         <div className="px-5 pt-4">
           <div className="flex items-start justify-between gap-3">
             <h2 id="signin-title" className="text-xl font-bold leading-tight">
-              Sign in to continue
+              {t("signInContinue")}
             </h2>
             <button
               onClick={onClose}
               className="-mr-2 -mt-1 grid h-12 w-12 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-ivory-2"
-              aria-label="Close"
+              aria-label={t("close")}
             >
               <CloseIcon />
             </button>
           </div>
           <p className="mt-1 text-base text-ink-2">{reason}</p>
-          <p className="mt-1 text-sm text-ink-2">Browsing stays open to everyone — signing in just keeps spam out.</p>
+          <p className="mt-1 text-sm text-ink-2">{t("browseOpen")}</p>
 
           <button
             ref={firstBtn}
@@ -64,16 +66,16 @@ export function SignInSheet({
             className="mt-5 flex h-14 w-full items-center justify-center gap-3 rounded-2xl border-2 border-ink bg-paper text-lg font-semibold text-ink active:bg-ivory-2 disabled:opacity-60"
           >
             {IS_MOCK ? (
-              <span>Continue as demo visitor</span>
+              <span>{t("continueDemo")}</span>
             ) : (
               <>
                 <GoogleG />
-                <span>{busy ? "Opening Google…" : "Continue with Google"}</span>
+                <span>{busy ? t("openingGoogle") : t("continueGoogle")}</span>
               </>
             )}
           </button>
           <button onClick={onClose} className="mt-2 h-12 w-full rounded-2xl text-base font-medium text-ink-2">
-            Not now
+            {t("notNow")}
           </button>
         </div>
       </div>

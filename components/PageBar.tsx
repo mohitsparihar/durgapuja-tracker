@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useI18n } from "@/lib/i18n";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { Wordmark } from "./AppHeader";
-import { BackIcon } from "./icons";
+import { BackIcon, HomeIcon } from "./icons";
 
-/** Compact indigo bar for inner pages: back + title, with the festive edge. */
+/** Compact indigo bar for inner pages: back, home, title, and language. */
 export function PageBar({ title, right }: { title: string; right?: React.ReactNode }) {
   const router = useRouter();
+  const { t } = useI18n();
   return (
     <header
       className="sticky top-0 z-[600] bg-indigo text-ivory"
@@ -18,15 +21,23 @@ export function PageBar({ title, right }: { title: string; right?: React.ReactNo
         <button
           onClick={() => (window.history.length > 1 ? router.back() : router.push("/"))}
           className="grid h-12 w-12 shrink-0 place-items-center rounded-full active:bg-indigo-2"
-          aria-label="Back"
+          aria-label={t("back")}
         >
           <BackIcon className="h-6 w-6" />
         </button>
-        <Link href="/" className="hidden shrink-0 lg:block" aria-label="Pandal Hop home">
+        <Link
+          href="/"
+          className="grid h-12 w-12 shrink-0 place-items-center rounded-full active:bg-indigo-2"
+          aria-label={t("home")}
+        >
+          <HomeIcon className="h-6 w-6" />
+        </Link>
+        <Link href="/" className="hidden shrink-0 lg:block" aria-label={t("home")}>
           <Wordmark small />
         </Link>
         <span className="hidden h-6 w-px bg-ivory/25 lg:block" aria-hidden />
         <p className="min-w-0 flex-1 truncate text-lg font-semibold">{title}</p>
+        <LanguageSwitcher compact />
         {right}
       </div>
       <div className="festive-edge" aria-hidden />

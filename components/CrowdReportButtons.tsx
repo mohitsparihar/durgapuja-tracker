@@ -3,19 +3,20 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { reportCrowd } from "@/lib/data";
-import { friendlyError } from "@/lib/errors";
 import { clearPendingAction, savePendingAction } from "@/lib/pending-action";
 import type { CrowdLevel, CrowdReport } from "@/lib/types";
+import { useI18n } from "@/lib/i18n";
+import { errorKey } from "@/lib/errors";
 import { CROWD_META } from "./CrowdBadge";
 import { CrowdIcon } from "./icons";
 
-const WAITS: { label: string; value: number | null }[] = [
-  { label: "Skip", value: null },
-  { label: "None", value: 0 },
-  { label: "10 min", value: 10 },
-  { label: "20 min", value: 20 },
-  { label: "30 min", value: 30 },
-  { label: "1 hr+", value: 60 },
+const WAITS: { label: "waitSkip" | "waitNone" | "wait10" | "wait20" | "wait30" | "wait60"; value: number | null }[] = [
+  { label: "waitSkip", value: null },
+  { label: "waitNone", value: 0 },
+  { label: "wait10", value: 10 },
+  { label: "wait20", value: 20 },
+  { label: "wait30", value: 30 },
+  { label: "wait60", value: 60 },
 ];
 
 /**
@@ -37,6 +38,7 @@ export function CrowdReportButtons({
   onSettled: (ok: boolean, message: string) => void;
 }) {
   const { requireUser } = useAuth();
+  const { t } = useI18n();
   const [level, setLevel] = useState<CrowdLevel | null>(initialLevel);
   const [wait, setWait] = useState<number | null>(initialWait);
   const [busy, setBusy] = useState(false);
@@ -44,7 +46,7 @@ export function CrowdReportButtons({
 
   const send = async () => {
     if (!level) return;
-    const u = requireUser("Sign in to report how crowded this pandal is.", {
+    const u = requireUser(t("signInCrowd"), {
       onSignedIn: () => clearPendingAction(), // demo sign-in stays on the page
     });
     if (!u) {
@@ -59,10 +61,10 @@ export function CrowdReportButtons({
       await reportCrowd(pandalId, level, wait, u.id);
       setLevel(null);
       setWait(null);
-      onSettled(true, "Thanks! Your crowd report is live for the next 45 minutes.");
+      onSettled(true, t("crowdThanks"));
     } catch (e) {
       onOptimistic(null);
-      const m = friendlyError(e);
+      const m = t(errorKey(e));
       setErr(m);
       onSettled(false, m);
     } finally {
@@ -72,7 +74,7 @@ export function CrowdReportButtons({
 
   return (
     <div data-testid="crowd-report">
-      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Crowd level">
+      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t("crowdLevel")}>
         {(Object.keys(CROWD_META) as CrowdLevel[]).map((l) => {
           const m = CROWD_META[l];
           const on = level === l;
@@ -90,8 +92,8 @@ export function CrowdReportButtons({
             >
               <CrowdIcon level={l} className="h-6 w-6 shrink-0" />
               <span>
-                <span className="block text-base font-bold leading-tight">{m.label}</span>
-                <span className={`block text-sm leading-tight ${on ? "text-white/90" : "text-ink-2"}`}>{m.hint}</span>
+                <span className="block text-base font-bold leading-tight">{t(m.label)}</span>
+                <span className={`block text-sm leading-tight ${on ? "text-white/90" : "text-ink-2"}`}>{t(m.hint)}</span>
               </span>
             </button>
           );
@@ -101,7 +103,7 @@ export function CrowdReportButtons({
       {level && (
         <div className="mt-3">
           <p className="mb-1.5 text-sm font-semibold text-ink-2" id="wait-label">
-            Queue wait (optional)
+            {t("queueWait")}
           </p>
           <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="radiogroup" aria-labelledby="wait-label">
             {WAITS.map((w) => (
@@ -115,7 +117,7 @@ export function CrowdReportButtons({
                   wait === w.value ? "border-indigo bg-indigo text-ivory" : "border-line bg-paper"
                 }`}
               >
-                {w.label}
+                {t(w.label)}
               </button>
             ))}
           </div>
@@ -126,7 +128,7 @@ export function CrowdReportButtons({
             className="mt-3 h-12 w-full rounded-xl bg-indigo text-base font-semibold text-ivory disabled:opacity-60"
             data-testid="crowd-send"
           >
-            {busy ? "Sending…" : `Send “${CROWD_META[level].label}”`}
+            {busy ? t("sendingBtn") : t("sendLevel", { level: t(CROWD_META[level].label) })}
           </button>
         </div>
       )}

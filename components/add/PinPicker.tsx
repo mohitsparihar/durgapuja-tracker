@@ -3,12 +3,13 @@
 import dynamic from "next/dynamic";
 import { useState } from "react";
 import { LocateIcon } from "@/components/icons";
+import { useI18n } from "@/lib/i18n";
 import { SearchBar } from "@/components/SearchBar";
 import type { LatLng } from "@/lib/types";
 
 const PinMap = dynamic(() => import("./PinMap"), {
   ssr: false,
-  loading: () => <div className="skeleton h-full w-full" aria-label="Loading map" />,
+  loading: () => <div className="skeleton h-full w-full" />,
 });
 
 /**
@@ -16,6 +17,7 @@ const PinMap = dynamic(() => import("./PinMap"), {
  * map, or search a place. Dragging the pin also works for fine-tuning.
  */
 export function PinPicker({ value, onChange }: { value: LatLng | null; onChange: (p: LatLng) => void }) {
+  const { t } = useI18n();
   const [focusKey, setFocusKey] = useState(0);
   const [gps, setGps] = useState<"idle" | "busy" | "error">("idle");
 
@@ -50,27 +52,27 @@ export function PinPicker({ value, onChange }: { value: LatLng | null; onChange:
           className="flex min-h-12 items-center justify-center gap-2 rounded-xl bg-indigo px-4 py-2 text-base font-semibold leading-snug text-ivory disabled:opacity-70"
           data-testid="pin-use-location"
         >
-          <LocateIcon /> {gps === "busy" ? "Finding you…" : "I'm at the pandal — use my location"}
+          <LocateIcon /> {gps === "busy" ? t("findingYou") : t("atPandal")}
         </button>
-        <SearchBar dark={false} onPick={(r) => set(r, true)} placeholder="Or search the area" testId="pin-search" />
+        <SearchBar dark={false} onPick={(r) => set(r, true)} placeholder={t("searchAreaPlaceholder")} testId="pin-search" />
       </div>
       {gps === "error" && (
         <p className="mt-2 text-base text-vermilion-ink" role="alert">
-          Couldn&apos;t get your location. Search the area or tap the map instead.
+          {t("couldntLocate")}
         </p>
       )}
-      <div className="relative mt-3 h-64 overflow-hidden rounded-2xl border-2 border-line lg:h-[min(520px,calc(100dvh-380px))] lg:min-h-80" data-testid="pin-map">
+      <div className="relative mt-3 h-[min(52dvh,440px)] min-h-72 overflow-hidden rounded-2xl border-2 border-line lg:h-[min(560px,calc(100dvh-280px))] lg:min-h-80" data-testid="pin-map">
         <PinMap pinAt={value} focusKey={focusKey} onPick={(p) => set(p, false)} />
         {!value && (
           <p className="pointer-events-none absolute left-[72px] right-3 top-3 z-[450] rounded-xl bg-paper/95 px-3 py-2 text-center text-sm font-medium shadow">
-            Tap the map where the pandal is
+            {t("tapMap")}
           </p>
         )}
       </div>
       <p className="mt-1.5 text-sm text-ink-2" aria-live="polite" data-testid="pin-status">
         {value
-          ? `Pin set at ${value.lat.toFixed(5)}, ${value.lng.toFixed(5)}. Tap the map or drag the pin to adjust.`
-          : "No pin yet."}
+          ? t("pinSet", { lat: value.lat.toFixed(5), lng: value.lng.toFixed(5) })
+          : t("noPin")}
       </p>
     </div>
   );

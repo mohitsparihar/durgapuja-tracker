@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useI18n } from "@/lib/i18n";
 import { directionsUrl, formatDistance } from "@/lib/geo";
 import type { PandalSummary } from "@/lib/types";
 import { CrowdBadge } from "./CrowdBadge";
@@ -16,6 +17,7 @@ export function PandalCard({
   selected: boolean;
   onSelect: (p: PandalSummary) => void;
 }) {
+  const { t } = useI18n();
   const dist = formatDistance(p.distance_m);
   return (
     <article
@@ -30,7 +32,7 @@ export function PandalCard({
         type="button"
         onClick={() => onSelect(p)}
         aria-pressed={selected}
-        aria-label={`${p.name}${dist ? `, ${dist} away` : ""}. Show on map`}
+        aria-label={t("showOnMap", { name: p.name, dist: dist ? `, ${dist}` : "" })}
         className="flex w-full gap-3 p-3 text-left"
       >
         <div className="h-[72px] w-[72px] shrink-0 overflow-hidden rounded-xl bg-indigo-2">
@@ -51,7 +53,7 @@ export function PandalCard({
             <CrowdBadge crowd={p.crowd} />
             {p.status === "needs_review" && (
               <span className="rounded-full border border-ink-2 px-2 py-0.5 text-xs font-semibold text-ink-2">
-                Under review
+                {t("underReview")}
               </span>
             )}
           </div>
@@ -63,7 +65,7 @@ export function PandalCard({
             href={`/pandal/${p.id}`}
             className="flex h-12 flex-1 items-center justify-center rounded-xl border-2 border-indigo text-base font-semibold text-indigo"
           >
-            View details
+            {t("viewDetails")}
           </Link>
           <a
             href={directionsUrl(p)}
@@ -71,7 +73,7 @@ export function PandalCard({
             rel="noopener noreferrer"
             className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-vermilion text-base font-semibold text-white"
           >
-            <DirectionsIcon /> Directions
+            <DirectionsIcon /> {t("directions")}
           </a>
         </div>
       )}

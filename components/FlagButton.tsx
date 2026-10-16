@@ -3,18 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { flagItem } from "@/lib/data";
-import { friendlyError } from "@/lib/errors";
+import { errorKey } from "@/lib/errors";
+import { useI18n, type Key } from "@/lib/i18n";
 import { clearPendingAction, savePendingAction } from "@/lib/pending-action";
 import type { FlagReason } from "@/lib/types";
 import { FlagIcon } from "./icons";
 import { Modal } from "./Modal";
 
-const REASONS: { value: FlagReason; label: string; kinds: ("pandal" | "photo")[] }[] = [
-  { value: "wrong_location", label: "Wrong location", kinds: ["pandal"] },
-  { value: "duplicate", label: "Duplicate of another pandal", kinds: ["pandal", "photo"] },
-  { value: "inappropriate", label: "Inappropriate or offensive", kinds: ["pandal", "photo"] },
-  { value: "spam", label: "Spam or not a pandal", kinds: ["pandal", "photo"] },
-  { value: "other", label: "Something else", kinds: ["pandal", "photo"] },
+const REASONS: { value: FlagReason; label: Key; kinds: ("pandal" | "photo")[] }[] = [
+  { value: "wrong_location", label: "wrongLocation", kinds: ["pandal"] },
+  { value: "duplicate", label: "duplicate", kinds: ["pandal", "photo"] },
+  { value: "inappropriate", label: "inappropriate", kinds: ["pandal", "photo"] },
+  { value: "spam", label: "spam", kinds: ["pandal", "photo"] },
+  { value: "other", label: "other", kinds: ["pandal", "photo"] },
 ];
 
 /** "Report" — sign-in gated; three distinct reports mark an item for review (never hide it). */
@@ -35,6 +36,7 @@ export function FlagButton({
   compact?: boolean;
 }) {
   const { user, requireUser } = useAuth();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<FlagReason | null>(null);
 
@@ -61,13 +63,12 @@ export function FlagButton({
   const [err, setErr] = useState<string | null>(null);
 
   const start = () => {
-    const what = kind === "pandal" ? "this pandal" : "this photo";
-    if (signInFor(`Sign in to report ${what}.`, null)) setOpen(true);
+    if (signInFor(kind === "pandal" ? t("signInReportPandal") : t("signInReportPhoto"), null)) setOpen(true);
   };
 
   const submit = async () => {
     if (!reason) return;
-    const u = signInFor("Sign in to send a report.", reason);
+    const u = signInFor(t("signInSendReport"), reason);
     if (!u) return;
     setBusy(true);
     setErr(null);
@@ -75,9 +76,9 @@ export function FlagButton({
       await flagItem(kind, targetId, reason, u.id);
       setOpen(false);
       setReason(null);
-      onDone("Thanks — we'll take a look.");
+      onDone(t("reportThanks"));
     } catch (e) {
-      setErr(friendlyError(e));
+      setErr(t(errorKey(e)));
     } finally {
       setBusy(false);
     }
@@ -88,7 +89,7 @@ export function FlagButton({
       <button
         type="button"
         onClick={start}
-        aria-label={kind === "pandal" ? "Report this pandal" : "Report this photo"}
+        aria-label={kind === "pandal" ? t("reportPandal") : t("reportPhoto")}
         data-testid={`flag-${kind}`}
         className={
           compact
@@ -97,13 +98,13 @@ export function FlagButton({
         }
       >
         <FlagIcon />
-        {!compact && "Report"}
+        {!compact && t("report")}
       </button>
       {open && (
-        <Modal title={kind === "pandal" ? "Report this pandal" : "Report this photo"} onClose={() => setOpen(false)} testId="flag-modal">
-          <p className="text-base text-ink-2">Reports are reviewed. Nothing is removed automatically.</p>
+        <Modal title={kind === "pandal" ? t("reportPandal") : t("reportPhoto")} onClose={() => setOpen(false)} testId="flag-modal">
+          <p className="text-base text-ink-2">{t("reportReviewed")}</p>
           <fieldset className="mt-3 space-y-2">
-            <legend className="sr-only">Reason</legend>
+            <legend className="sr-only">{t("reason")}</legend>
             {REASONS.filter((r) => r.kinds.includes(kind)).map((r) => (
               <label
                 key={r.value}
@@ -119,7 +120,7 @@ export function FlagButton({
                   onChange={() => setReason(r.value)}
                   className="h-5 w-5 accent-indigo"
                 />
-                {r.label}
+                {t(r.label)}
               </label>
             ))}
           </fieldset>
@@ -129,7 +130,7 @@ export function FlagButton({
             onClick={submit}
             className="mt-4 h-12 w-full rounded-xl bg-indigo text-base font-semibold text-ivory disabled:opacity-50"
           >
-            {busy ? "Sending…" : "Send report"}
+            {busy ? t("sendingBtn") : t("sendReport")}
           </button>
         </Modal>
       )}

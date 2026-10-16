@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- local object-URL previews */
 import { useRef } from "react";
 import { CameraIcon, CloseIcon, RetryIcon } from "@/components/icons";
+import { useI18n, type Key } from "@/lib/i18n";
 
 export type PhotoStatus = "compressing" | "ready" | "uploading" | "done" | "failed" | "invalid";
 export interface PendingPhoto {
@@ -14,13 +15,13 @@ export interface PendingPhoto {
   error: string | null;
 }
 
-const LABEL: Record<PhotoStatus, string> = {
-  compressing: "Preparing…",
-  ready: "Ready",
-  uploading: "Uploading…",
-  done: "Uploaded",
-  failed: "Didn't upload",
-  invalid: "Can't use this",
+const LABEL: Record<PhotoStatus, Key> = {
+  compressing: "photoPreparing",
+  ready: "photoReady",
+  uploading: "photoUploading",
+  done: "photoUploaded",
+  failed: "photoFailed",
+  invalid: "photoInvalid",
 };
 
 export function PhotoUploader({
@@ -38,6 +39,7 @@ export function PhotoUploader({
   onRetry: (key: string) => void;
   locked: boolean;
 }) {
+  const { t } = useI18n();
   const input = useRef<HTMLInputElement>(null);
   const room = max - photos.filter((p) => p.status !== "invalid").length;
 
@@ -57,7 +59,7 @@ export function PhotoUploader({
                     type="button"
                     onClick={() => onRemove(p.key)}
                     className="absolute right-1 top-1 grid h-12 w-12 place-items-center rounded-full bg-indigo/75 text-ivory"
-                    aria-label="Remove this photo"
+                    aria-label={t("removePhoto")}
                   >
                     <CloseIcon />
                   </button>
@@ -74,7 +76,7 @@ export function PhotoUploader({
                   }`}
                 >
                   {p.status === "done" ? "✓ " : ""}
-                  {LABEL[p.status]}
+                  {t(LABEL[p.status])}
                 </span>
                 {p.status === "failed" && (
                   <button
@@ -83,11 +85,11 @@ export function PhotoUploader({
                     className="flex h-12 items-center gap-1 rounded-lg px-2 text-sm font-bold text-indigo underline"
                     data-testid="retry-photo"
                   >
-                    <RetryIcon className="h-4 w-4" /> Retry
+                    <RetryIcon className="h-4 w-4" /> {t("retry")}
                   </button>
                 )}
               </div>
-              {p.error && <p className="px-2 pb-2 text-xs text-vermilion-ink">{p.error}</p>}
+              {p.error && <p className="px-2 pb-2 text-xs text-vermilion-ink">{t(p.error as Key)}</p>}
             </li>
           ))}
         </ul>
@@ -100,7 +102,7 @@ export function PhotoUploader({
             onClick={() => input.current?.click()}
             className="flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-indigo/50 bg-paper text-base font-semibold text-indigo"
           >
-            <CameraIcon /> {photos.length ? `Add more (${room} left)` : `Take or choose photos (up to ${max})`}
+            <CameraIcon /> {photos.length ? t("addMore", { n: room }) : t("takePhotos", { n: max })}
           </button>
           <input
             ref={input}
@@ -117,7 +119,7 @@ export function PhotoUploader({
           />
         </>
       )}
-      <p className="mt-1.5 text-sm text-ink-2">Photos are shrunk on your phone before upload to save data.</p>
+      <p className="mt-1.5 text-sm text-ink-2">{t("photosShrunk")}</p>
     </div>
   );
 }

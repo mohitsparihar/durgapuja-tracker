@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "@/lib/i18n";
 import { CloseIcon } from "./icons";
 
 /** Bottom-anchored modal sheet (centered on wide screens). Escape and backdrop close it. */
@@ -15,6 +16,7 @@ export function Modal({
   children: React.ReactNode;
   testId?: string;
 }) {
+  const { t } = useI18n();
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
@@ -29,7 +31,7 @@ export function Modal({
 
   return (
     <div className="fixed inset-0 z-[1000] flex items-end justify-center sm:items-center" role="presentation">
-      <button aria-label="Close" tabIndex={-1} className="absolute inset-0 bg-indigo/50" onClick={onClose} />
+      <button aria-label={t("close")} tabIndex={-1} className="absolute inset-0 bg-indigo/50" onClick={onClose} />
       <div
         ref={panel}
         role="dialog"
@@ -45,7 +47,7 @@ export function Modal({
           <button
             onClick={onClose}
             className="-mr-2 grid h-12 w-12 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-ivory-2"
-            aria-label="Close"
+            aria-label={t("close")}
           >
             <CloseIcon />
           </button>
@@ -69,6 +71,7 @@ export function ConfirmModal({
   onConfirm: () => Promise<void>;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -77,7 +80,7 @@ export function ConfirmModal({
       {err && <p className="mt-3 text-base font-medium text-vermilion-ink" role="alert">{err}</p>}
       <div className="mt-5 flex gap-2">
         <button onClick={onClose} className="h-12 flex-1 rounded-xl border-2 border-line text-base font-semibold">
-          Cancel
+          {t("cancel")}
         </button>
         <button
           disabled={busy}
@@ -87,13 +90,13 @@ export function ConfirmModal({
             try {
               await onConfirm();
             } catch (e) {
-              setErr(e instanceof Error ? e.message : "Something went wrong.");
+              setErr(e instanceof Error ? e.message : t("err.generic"));
               setBusy(false);
             }
           }}
           className="h-12 flex-1 rounded-xl bg-vermilion text-base font-semibold text-white disabled:opacity-60"
         >
-          {busy ? "Working…" : confirmLabel}
+          {busy ? t("working") : confirmLabel}
         </button>
       </div>
     </Modal>

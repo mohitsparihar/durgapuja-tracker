@@ -52,6 +52,10 @@
   --font-display: var(--font-yatra), var(--font-hind), serif;
 }
 
+html[lang="bn"] {
+  --font-sans: var(--font-bengali), var(--font-hind), system-ui, sans-serif;
+}
+
 html,
 body {
   background: var(--ivory);
@@ -125,59 +129,9 @@ textarea {
   }
 }
 
-/* ---------------------------------------------------------------------------
-   Leaflet adjustments
---------------------------------------------------------------------------- */
-.leaflet-container {
-  font-family: var(--font-sans);
-  background: #e9e4d8;
-}
-
-/* Keep attribution visible above the sheet, bottom-left, readable outdoors. */
-.leaflet-control-attribution {
-  font-size: 11px !important;
-  background: rgb(255 253 248 / 0.92) !important;
-  color: var(--ink-2) !important;
-  padding: 2px 6px !important;
-  border-radius: 6px 6px 0 0;
-}
-.leaflet-control-attribution a {
-  color: var(--ink) !important;
-}
-.home-map .leaflet-bottom.leaflet-left {
-  bottom: calc(var(--sheet-h) + 2px);
-  transition: bottom 0.2s ease;
-}
-
-.pin-icon,
-.cluster-icon {
-  background: transparent;
-  border: 0;
-}
-
-.cluster-bubble {
-  display: grid;
-  place-items: center;
-  border-radius: 9999px;
-  background: var(--indigo);
-  color: var(--paper);
-  font-weight: 700;
-  border: 3px solid var(--marigold);
-  box-shadow: 0 0 0 4px rgb(242 169 0 / 0.25), 0 4px 10px rgb(0 0 0 / 0.25);
-}
-
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   scrollbar-width: none;
-}
-
-/* Leaflet's default zoom buttons are 30px — enlarge to a 48px touch target. */
-.leaflet-touch .leaflet-bar a,
-.leaflet-bar a {
-  width: 48px !important;
-  height: 48px !important;
-  line-height: 48px !important;
-  font-size: 22px !important;
 }

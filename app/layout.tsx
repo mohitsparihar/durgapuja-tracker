@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Hind, Yatra_One } from "next/font/google";
-import "leaflet/dist/leaflet.css";
+import { Hind, Hind_Siliguri, Yatra_One } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
+import { I18nProvider } from "@/lib/i18n";
 import { SwRegister } from "@/components/SwRegister";
 
 const hind = Hind({
@@ -13,6 +13,13 @@ const hind = Hind({
 });
 
 // Display face — used ONLY for the wordmark.
+const bengali = Hind_Siliguri({
+  variable: "--font-bengali",
+  subsets: ["bengali", "latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
 const yatra = Yatra_One({
   variable: "--font-yatra",
   subsets: ["latin"],
@@ -41,8 +48,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${hind.variable} ${yatra.variable} antialiased`}>
-        <AuthProvider>{children}</AuthProvider>
+      <body className={`${hind.variable} ${bengali.variable} ${yatra.variable} antialiased`}>
+        <I18nProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </I18nProvider>
         <SwRegister />
       </body>
     </html>

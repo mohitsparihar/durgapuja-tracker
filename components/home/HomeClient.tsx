@@ -11,12 +11,13 @@ import { ErrorBanner, LocationBanner, LocationPrompt, NearMeChip, OfflineBanner 
 import { useAuth } from "@/lib/auth";
 import { LIMITS } from "@/lib/config";
 import { nearbyPandals, pandalClusters, pandalsInBounds, subscribeCrowd } from "@/lib/data";
-import { friendlyError } from "@/lib/errors";
+import { errorKey } from "@/lib/errors";
+import { useI18n } from "@/lib/i18n";
 import { boundsCenter, clusterCellDeg, distanceM } from "@/lib/geo";
 import { storage, useIsSide, useOnline, useRefetchOnReturn } from "@/lib/hooks";
 import { LAST_LIST_KEY, type CachedList } from "@/lib/offline";
 import type { Cluster, GeocodeResult, LatLng, PandalSummary } from "@/lib/types";
-import { BottomSheet, type Snap } from "./BottomSheet";
+import { BottomSheet, sheetHeightFor, type Snap } from "./BottomSheet";
 import type { MapApi, MapView } from "./HomeMap";
 
 const HomeMap = dynamic(() => import("./HomeMap"), {
@@ -52,6 +53,7 @@ const EMPTY_LIST: ListState = { items: [], truncated: false, loading: false, err
 export default function HomeClient() {
   const router = useRouter();
   const { requireUser } = useAuth();
+  const { t } = useI18n();
   const online = useOnline();
   const side = useIsSide();
 
@@ -206,7 +208,7 @@ export default function HomeClient() {
   useEffect(() => {
     if (!view) return;
     const id = ++mapReq.current;
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       if (view.zoom >= LIMITS.markerMinZoom) {
         setArea((a) => ({ ...a, loading: true, error: null }));
         try {
@@ -217,7 +219,7 @@ export default function HomeClient() {
           setArea({ items: r.items, truncated: r.truncated, loading: false, error: null, fromCache: false });
         } catch (e) {
           if (id !== mapReq.current) return;
-          setArea((a) => ({ ...a, loading: false, error: friendlyError(e) }));
+          setArea((a) => ({ ...a, loading: false, error: t(errorKey(e)) }));
         }
       } else {
         try {
@@ -228,12 +230,12 @@ export default function HomeClient() {
           setArea({ ...EMPTY_LIST });
         } catch (e) {
           if (id !== mapReq.current) return;
-          setArea({ ...EMPTY_LIST, error: friendlyError(e) });
+          setArea({ ...EMPTY_LIST, error: t(errorKey(e)) });
         }
       }
     }, 250);
     return () => {
-      clearTimeout(t);
+      clearTimeout(timer);
       // eslint-disable-next-line react-hooks/exhaustive-deps -- request counter, not a DOM ref; bumping it is the point
       mapReq.current++; // invalidate any response still in flight for the old view
     };
@@ -254,7 +256,7 @@ export default function HomeClient() {
       })
       .catch((e) => {
         if (id !== nearReq.current) return;
-        setNearby((n) => ({ ...n, loading: false, error: friendlyError(e) }));
+        setNearby((n) => ({ ...n, loading: false, error: t(errorKey(e)) }));
       });
     return () => {
       // eslint-disable-next-line react-hooks/exhaustive-deps -- request counter, not a DOM ref
@@ -274,15 +276,15 @@ export default function HomeClient() {
   const title =
     mode === "nearby"
       ? ref!.kind === "gps"
-        ? "Nearby"
-        : `Near ${ref!.label.split(",")[0]}`
+        ? t("nearby")
+        : t("nearPlace", { place: ref!.label.split(",")[0] })
       : mode === "area"
-        ? "Pandals in this area"
+        ? t("pandalsInArea")
         : mode === "locating"
-          ? "Finding pandals near you…"
+          ? t("findingNear")
           : loc === "denied"
-            ? "Zoom in to see pandals"
-            : "Find pandals near you";
+            ? t("zoomToSee")
+            : t("findNear");
   const list: ListState = mode === "nearby" ? nearby : mode === "area" ? area : EMPTY_LIST;
 
   // Offline fallback: keep the last good list and show it when fetches fail offline.
@@ -313,10 +315,12 @@ export default function HomeClient() {
   const selectFromList = useCallback(
     (p: PandalSummary) => {
       setSelected(p);
-      mapApi.current?.flyTo(p, Math.max(mapApi.current.getZoom(), 15));
+      const next: Snap = snap === "full" ? "half" : snap;
       if (snap === "full") setSnap("half");
+      const bottom = side ? 0 : sheetHeightFor(next, headerH, window.innerHeight);
+      mapApi.current?.flyTo(p, Math.max(mapApi.current.getZoom(), 15), bottom);
     },
-    [snap],
+    [snap, side, headerH],
   );
 
   const selectFromMap = useCallback((p: PandalSummary) => {
@@ -336,9 +340,11 @@ export default function HomeClient() {
     choiceSeq.current++;
     setRef({ lat: r.lat, lng: r.lng, label: r.label, kind: "place" });
     setSelected(null);
-    mapApi.current?.flyTo(r, 14);
-    setSnap((s) => (s === "peek" ? "half" : s));
-  }, []);
+    const next: Snap = snap === "peek" ? "half" : snap;
+    if (!side && snap === "peek") setSnap("half");
+    const bottom = side ? 0 : sheetHeightFor(next, headerH, window.innerHeight);
+    mapApi.current?.flyTo(r, 16, bottom);
+  }, [snap, side, headerH]);
 
   const searchThisArea = () => {
     choiceSeq.current++;
@@ -347,7 +353,7 @@ export default function HomeClient() {
   };
 
   const addPandal = () => {
-    if (requireUser("Sign in to add a pandal and its photos.", { next: "/add", onSignedIn: () => router.push("/add") }))
+    if (requireUser(t("signInAdd"), { next: "/add", onSignedIn: () => router.push("/add") }))
       router.push("/add");
   };
 
@@ -362,13 +368,12 @@ export default function HomeClient() {
         </h2>
         {!list.loading && shown.length > 0 && (
           <span className="shrink-0 text-sm text-ink-2" data-testid="list-count">
-            {shown.length}
-            {list.truncated ? "+" : ""} pandal{shown.length === 1 ? "" : "s"}
+            {shown.length === 1 && !list.truncated ? t("pandalCountOne") : t("pandalCount", { n: `${shown.length}${list.truncated ? "+" : ""}` })}
           </span>
         )}
       </div>
       {mode === "nearby" && ref?.kind === "gps" && (
-        <p className="text-sm text-ink-2">Within {LIMITS.nearbyRadiusM / 1000} km, closest first</p>
+        <p className="text-sm text-ink-2">{t("withinKm", { km: LIMITS.nearbyRadiusM / 1000 })}</p>
       )}
     </div>
   );
@@ -386,12 +391,8 @@ export default function HomeClient() {
 
       {mode === "zoom" && !showCached && (
         <EmptyState
-          title={loc === "denied" ? "Zoom in to see pandals" : "Where are you?"}
-          body={
-            loc === "denied"
-              ? "Tap a bubble on the map or search a place to see individual pandals."
-              : "Use your location to list the closest pandals first — or search a place, or tap a bubble on the map."
-          }
+          title={loc === "denied" ? t("zoomToSee") : t("whereAreYou")}
+          body={loc === "denied" ? t("zoomBody") : t("whereBody")}
           action={
             <div className="flex flex-wrap justify-center gap-2">
               {loc !== "denied" && (
@@ -400,11 +401,11 @@ export default function HomeClient() {
                   className="flex h-12 items-center gap-2 rounded-xl bg-vermilion px-4 text-base font-semibold text-white"
                   data-testid="list-use-location"
                 >
-                  <LocateIcon /> Use my location
+                  <LocateIcon /> {t("useMyLocation")}
                 </button>
               )}
               <button onClick={focusSearch} className="h-12 rounded-xl bg-indigo px-4 text-base font-semibold text-ivory">
-                Search a place
+                {t("searchPlace")}
               </button>
             </div>
           }
@@ -417,15 +418,15 @@ export default function HomeClient() {
 
       {!list.loading && !list.error && (mode === "nearby" || mode === "area") && shown.length === 0 && (
         <EmptyState
-          title="No pandals here yet — be the first to add one"
+          title={t("noPandalsYet")}
           body={
             mode === "nearby"
-              ? `Nothing within ${LIMITS.nearbyRadiusM / 1000} km has been added. Spotted one? Add it with a photo.`
-              : "Nothing has been added in this part of the map yet."
+              ? t("nothingWithin", { km: LIMITS.nearbyRadiusM / 1000 })
+              : t("nothingOnMap")
           }
           action={
             <button onClick={addPandal} className="h-12 rounded-xl bg-vermilion px-4 text-base font-semibold text-white">
-              Add a pandal
+              {t("addAPandal")}
             </button>
           }
         />
@@ -434,8 +435,8 @@ export default function HomeClient() {
       {list.truncated && !showCached && (
         <p className="px-1 py-2 text-center text-sm text-ink-2" data-testid="truncation-note">
           {mode === "nearby"
-            ? `Showing the nearest ${LIMITS.nearbyLimit} — move the map and tap “Search this area” to explore more.`
-            : `Showing ${LIMITS.boundsLimit} pandals in this area — zoom in for more.`}
+            ? t("showingNearest", { n: LIMITS.nearbyLimit })
+            : t("showingBounds", { n: LIMITS.boundsLimit })}
         </p>
       )}
     </div>
@@ -446,9 +447,10 @@ export default function HomeClient() {
   const fabCompact = !side && snap === "half";
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-ivory">
+    <div className="fixed inset-0 bg-ivory">
       <AppHeader
         ref={headerRef}
+        overlay
         compact={side}
         actions={
           <button
@@ -456,20 +458,20 @@ export default function HomeClient() {
             className="flex h-12 items-center gap-2 rounded-full bg-vermilion pl-4 pr-5 text-base font-bold text-white shadow-[0_4px_14px_rgba(215,38,61,0.45)] active:bg-vermilion-ink"
             data-testid="add-header"
           >
-            <PlusIcon className="h-5 w-5" /> Add pandal
+            <PlusIcon className="h-5 w-5" /> {t("addPandal")}
           </button>
         }
       >
         <SearchBar onPick={onPlace} />
       </AppHeader>
 
-      <div className={`relative flex min-h-0 flex-1 ${side ? "flex-row" : ""}`}>
+      <div className={`absolute inset-0 flex ${side ? "flex-row" : ""}`}>
         {side && (
           <aside
             className="z-[500] flex h-full w-[min(360px,46vw)] shrink-0 flex-col border-r border-line bg-ivory lg:w-[400px] xl:w-[440px]"
-            aria-label="Pandal list"
+            aria-label={t("pandalList")}
             data-testid="side-panel"
-            style={{ paddingLeft: "var(--safe-l)" }}
+            style={{ paddingLeft: "var(--safe-l)", paddingTop: headerH }}
           >
             <div className="pt-3">{listHeader}</div>
             <div className="min-h-0 flex-1 overflow-y-auto px-3" style={{ paddingBottom: "calc(16px + var(--safe-b))" }}>
@@ -485,6 +487,8 @@ export default function HomeClient() {
               clusters={clusters}
               selectedId={selected?.id ?? null}
               userPoint={userPoint}
+              placePoint={ref?.kind === "place" ? { lat: ref.lat, lng: ref.lng } : null}
+              chromeTop={headerH}
               onMarkerSelect={selectFromMap}
               onClusterSelect={onCluster}
               onView={setView}
@@ -515,7 +519,7 @@ export default function HomeClient() {
                 className="pointer-events-auto h-12 rounded-full bg-indigo px-5 text-base font-semibold text-ivory shadow-lg"
                 data-testid="search-area"
               >
-                Search this area
+                {t("searchThisArea")}
               </button>
             )}
           </div>
@@ -536,27 +540,27 @@ export default function HomeClient() {
             <div className={`flex-col overflow-hidden rounded-2xl border border-line bg-paper shadow-lg ${
                 fabCompact ? "hidden" : "flex"
               } [@media(max-height:420px)]:hidden`}>
-              <MapButton label="Zoom in" onClick={() => mapApi.current?.zoomIn()}>
+              <MapButton label={t("zoomIn")} onClick={() => mapApi.current?.zoomIn()}>
                 <PlusIcon />
               </MapButton>
               <span className="h-px bg-line" />
-              <MapButton label="Zoom out" onClick={() => mapApi.current?.zoomOut()}>
+              <MapButton label={t("zoomOut")} onClick={() => mapApi.current?.zoomOut()}>
                 <MinusIcon />
               </MapButton>
             </div>
-            <MapButton label="Show my location" onClick={() => locate(true)} solo>
+            <MapButton label={t("showMyLocation")} onClick={() => locate(true)} solo>
               <LocateIcon className={`h-5 w-5 ${loc === "granted" ? "text-[#2563eb]" : ""}`} />
             </MapButton>
             <button
               onClick={addPandal}
-              aria-label="Add pandal"
+              aria-label={t("addPandal")}
               className={`mt-1 flex h-14 items-center justify-center gap-2 rounded-full bg-vermilion text-base font-bold text-white shadow-[0_6px_20px_rgba(215,38,61,0.45)] active:bg-vermilion-ink ${side ? "lg:hidden" : ""} ${
                 fabCompact ? "w-14" : "pl-4 pr-5"
               }`}
               data-testid="add-fab"
             >
               <PlusIcon className="h-6 w-6" />
-              {!fabCompact && <span>Add pandal</span>}
+              {!fabCompact && <span>{t("addPandal")}</span>}
             </button>
           </div>
         </div>

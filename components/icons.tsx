@@ -41,6 +41,12 @@ export const MinusIcon = (p: P) => (
     <path d="M5 12h14" />
   </Svg>
 );
+export const HomeIcon = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 10.5 12 4l8 6.5" />
+    <path d="M6 9.5V20h12V9.5" />
+  </Svg>
+);
 export const BackIcon = (p: P) => (
   <Svg {...p}>
     <path d="M15 18 9 12l6-6" />

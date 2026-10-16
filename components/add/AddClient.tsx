@@ -8,7 +8,8 @@ import { PageBar } from "@/components/PageBar";
 import { useAuth } from "@/lib/auth";
 import { LIMITS, TAGS } from "@/lib/config";
 import { createPandal, findDuplicates, getPandal, uploadPhoto } from "@/lib/data";
-import { friendlyError } from "@/lib/errors";
+import { errorKey } from "@/lib/errors";
+import { useI18n, type Key } from "@/lib/i18n";
 import { formatDistance } from "@/lib/geo";
 import { compressPhoto } from "@/lib/image";
 import { photoStore, type StoredPhoto } from "@/lib/photo-store";
@@ -55,6 +56,7 @@ export default function AddClient() {
   const params = useSearchParams();
   const existingId = params.get("pandal");
   const { user, loading: authLoading, requireUser } = useAuth();
+  const { t } = useI18n();
 
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [hydrated, setHydrated] = useState(false);
@@ -178,7 +180,7 @@ export default function AddClient() {
           const blob = await compressPhoto(f);
           patchPhoto(items[i].key, { blob, status: "ready" });
         } catch (e) {
-          patchPhoto(items[i].key, { status: "invalid", error: friendlyError(e) });
+          patchPhoto(items[i].key, { status: "invalid", error: errorKey(e) });
         }
       }),
     );
@@ -199,7 +201,7 @@ export default function AddClient() {
       patchPhoto(p.key, { status: "done" });
       return true;
     } catch (e) {
-      patchPhoto(p.key, { status: "failed", error: friendlyError(e) });
+      patchPhoto(p.key, { status: "failed", error: errorKey(e) });
       return false;
     }
   }, []);
@@ -225,7 +227,7 @@ export default function AddClient() {
     setShowErrors(true);
     setFormError(null);
     if (!valid || stillPreparing) return;
-    const u = requireUser("Sign in to add a pandal and its photos.");
+    const u = requireUser(t("signInAdd"));
     if (!u) return;
     setSubmitting(true);
     try {
@@ -261,16 +263,16 @@ export default function AddClient() {
         }
       }
       if (allOk) finish(id);
-      else setFormError("Some photos didn't upload. Your details are saved — retry them, or finish without them.");
+      else setFormError("someFailed");
     } catch (e) {
-      setFormError(friendlyError(e));
+      setFormError(errorKey(e));
     } finally {
       setSubmitting(false);
     }
   };
 
   const retryOne = async (key: string) => {
-    const u = requireUser("Sign in to upload photos.");
+    const u = requireUser(t("signInUpload"));
     const p = photosRef.current.find((x) => x.key === key);
     if (!u || !p || !pandalId) {
       if (!pandalId) void submit();
@@ -286,15 +288,15 @@ export default function AddClient() {
   if (!authLoading && !user) {
     return (
       <main className="min-h-dvh bg-ivory">
-        <PageBar title={existingId ? "Add photos" : "Add a pandal"} />
+        <PageBar title={existingId ? t("addPhotos") : t("addAPandal")} />
         <div className="mx-auto max-w-xl p-5">
-          <h1 className="text-xl font-bold">Sign in to add pandals and photos</h1>
-          <p className="mt-2 text-base text-ink-2">Browsing is open to everyone. Adding needs a quick sign-in so the map stays spam-free.</p>
+          <h1 className="text-xl font-bold">{t("signInAddTitle")}</h1>
+          <p className="mt-2 text-base text-ink-2">{t("signInAddBody")}</p>
           <button
-            onClick={() => requireUser("Sign in to add a pandal and its photos.")}
+            onClick={() => requireUser(t("signInAdd"))}
             className="mt-5 h-12 w-full rounded-xl bg-indigo text-base font-semibold text-ivory"
           >
-            Sign in
+            {t("signIn")}
           </button>
         </div>
       </main>
@@ -304,11 +306,11 @@ export default function AddClient() {
   if (existingId && existing === "missing") {
     return (
       <main className="min-h-dvh bg-ivory">
-        <PageBar title="Add photos" />
+        <PageBar title={t("addPhotos")} />
         <div className="mx-auto max-w-xl p-5">
-          <p className="text-base">This pandal no longer exists.</p>
+          <p className="text-base">{t("gone")}</p>
           <Link href="/" className="mt-4 inline-flex h-12 items-center rounded-xl bg-indigo px-5 font-semibold text-ivory">
-            Back to the map
+            {t("backToMap")}
           </Link>
         </div>
       </main>
@@ -320,7 +322,7 @@ export default function AddClient() {
 
   return (
     <main className="min-h-dvh bg-ivory">
-      <PageBar title={existingId ? `Add photos${existing && existing !== "missing" ? ` — ${existing.name}` : ""}` : "Add a pandal"} />
+      <PageBar title={existingId ? (existing && existing !== "missing" ? t("addPhotosNamed", { name: existing.name }) : t("addPhotos")) : t("addAPandal")} />
 
       {/* Not a <form>: the place search inside the pin picker is its own form, and forms can't nest. */}
       {/* Desktop (lg): pin map on the left (sticky), details + photos on the right. */}
@@ -336,22 +338,22 @@ export default function AddClient() {
           <div className="space-y-6 lg:sticky lg:top-24">
             {locked && (
               <p className="rounded-xl border-2 border-[var(--crowd-low)] bg-paper px-3 py-2 text-base" role="status">
-                ✓ Pandal saved. Now uploading its photos.
+                ✓ {t("pandalSaved")}
               </p>
             )}
 
             <section aria-labelledby="where-h">
               <h2 id="where-h" className="mb-2 text-lg font-bold">
-                1. Where is it?
+                {t("where")}
               </h2>
               {locked ? (
-                <p className="text-base text-ink-2">Location saved.</p>
+                <p className="text-base text-ink-2">{t("locationSaved")}</p>
               ) : (
                 <PinPicker value={draft.pin} onChange={(p) => update("pin", p)} />
               )}
               {fieldErr(!draft.pin) && (
                 <p className="mt-1 text-base font-medium text-vermilion-ink" role="alert">
-                  Set the pandal&apos;s location on the map.
+                  {t("setLocation")}
                 </p>
               )}
             </section>
@@ -363,9 +365,9 @@ export default function AddClient() {
           <>
             <section aria-labelledby="what-h" className="space-y-4">
               <h2 id="what-h" className="text-lg font-bold">
-                2. What is it called?
+                {t("whatCalled")}
               </h2>
-              <Field label="Pandal name" required error={fieldErr(!nameOk) ? "Enter the pandal's name (at least 2 letters)." : null}>
+              <Field fieldId="name" label={t("pandalName")} required error={fieldErr(!nameOk) ? t("nameError") : null}>
                 {(id) => (
                   <input
                     id={id}
@@ -375,16 +377,16 @@ export default function AddClient() {
                     disabled={locked}
                     autoComplete="off"
                     className="h-12 w-full rounded-xl border-2 border-line bg-paper px-3 disabled:opacity-70"
-                    placeholder="e.g. Shivaji Park Sarbojanin"
+                    placeholder={t("namePlaceholder")}
                   />
                 )}
               </Field>
 
               {!locked && draft.pin && dupCheck.key === dupKey && dupCheck.status === "error" && (
                 <div className="flex items-center justify-between gap-2 rounded-xl border-2 border-vermilion bg-paper px-3 py-2" role="alert">
-                  <p className="text-base">Couldn&apos;t check for pandals already at this spot.</p>
+                  <p className="text-base">{t("couldntCheck")}</p>
                   <button type="button" onClick={() => setDupRetry((n) => n + 1)} className="h-12 shrink-0 px-2 font-semibold text-indigo underline">
-                    Retry
+                    {t("retry")}
                   </button>
                 </div>
               )}
@@ -392,18 +394,18 @@ export default function AddClient() {
                 <div className="rounded-2xl border-2 border-marigold bg-marigold-soft/40 p-3" role="alert" data-testid="duplicate-warning">
                   <p className="flex items-start gap-2 text-base font-semibold">
                     <AlertIcon className="mt-0.5 h-5 w-5 shrink-0" />
-                    {dupes.length === 1 ? "This pandal may already be on the map:" : "These pandals are already very close by:"}
+                    {dupes.length === 1 ? t("mayExist") : t("alreadyClose")}
                   </p>
                   <ul className="mt-2 space-y-2">
                     {dupes.map((d) => (
                       <li key={d.id} className="rounded-xl bg-paper p-2">
                         <p className="break-words font-semibold">{d.name}</p>
-                        <p className="text-sm text-ink-2">{formatDistance(d.distance_m)} from your pin</p>
+                        <p className="text-sm text-ink-2">{t("fromPin", { dist: formatDistance(d.distance_m) ?? "" })}</p>
                         <Link
                           href={`/add?pandal=${encodeURIComponent(d.id)}`}
                           className="mt-1.5 flex h-12 items-center justify-center rounded-xl bg-indigo text-base font-semibold text-ivory"
                         >
-                          Add photos to this one instead
+                          {t("addPhotosInstead")}
                         </Link>
                       </li>
                     ))}
@@ -416,12 +418,12 @@ export default function AddClient() {
                       className="h-6 w-6 accent-indigo"
                       data-testid="dup-ack"
                     />
-                    This is a different pandal — add anyway
+                    {t("differentPandal")}
                   </label>
                 </div>
               )}
 
-              <Field label="Area / address" hint="Optional — helps people find it">
+              <Field fieldId="address" label={t("area")} hint={t("areaHint")}>
                 {(id) => (
                   <input
                     id={id}
@@ -430,11 +432,11 @@ export default function AddClient() {
                     maxLength={200}
                     disabled={locked}
                     className="h-12 w-full rounded-xl border-2 border-line bg-paper px-3 disabled:opacity-70"
-                    placeholder="e.g. Near Shyambazar 5-point crossing"
+                    placeholder={t("areaPlaceholder")}
                   />
                 )}
               </Field>
-              <Field label="City / town" hint="Optional">
+              <Field fieldId="city" label={t("city")} hint={t("optional")}>
                 {(id) => (
                   <input
                     id={id}
@@ -443,11 +445,11 @@ export default function AddClient() {
                     maxLength={80}
                     disabled={locked}
                     className="h-12 w-full rounded-xl border-2 border-line bg-paper px-3 disabled:opacity-70"
-                    placeholder="e.g. Nowgong"
+                    placeholder={t("cityPlaceholder")}
                   />
                 )}
               </Field>
-              <Field label="What's special this year?" hint="Optional — theme, idol, lighting, timings">
+              <Field fieldId="special" label={t("special")} hint={t("specialHint")}>
                 {(id) => (
                   <textarea
                     id={id}
@@ -461,22 +463,22 @@ export default function AddClient() {
                 )}
               </Field>
               <fieldset>
-                <legend className="mb-1.5 text-base font-semibold">Tags <span className="font-normal text-ink-2">(optional)</span></legend>
+                <legend className="mb-1.5 text-base font-semibold">{t("tags")} <span className="font-normal text-ink-2">({t("tagsOptional")})</span></legend>
                 <div className="flex flex-wrap gap-2">
-                  {TAGS.map((t) => {
-                    const on = draft.tags.includes(t);
+                  {TAGS.map((tag) => {
+                    const on = draft.tags.includes(tag);
                     return (
                       <button
-                        key={t}
+                        key={tag}
                         type="button"
                         aria-pressed={on}
                         disabled={locked}
-                        onClick={() => update("tags", on ? draft.tags.filter((x) => x !== t) : [...draft.tags, t])}
+                        onClick={() => update("tags", on ? draft.tags.filter((x) => x !== tag) : [...draft.tags, tag])}
                         className={`h-12 rounded-full border-2 px-4 text-base ${
                           on ? "border-marigold bg-marigold-soft font-semibold" : "border-line bg-paper"
                         }`}
                       >
-                        {t}
+                        {t(`tag.${tag}` as Key)}
                       </button>
                     );
                   })}
@@ -488,7 +490,7 @@ export default function AddClient() {
 
         <section aria-labelledby="photos-h">
           <h2 id="photos-h" className="mb-2 text-lg font-bold">
-            {existingId ? "Your photos" : "3. Photos"}
+            {existingId ? t("yourPhotos") : t("photosStep")}
           </h2>
           <PhotoUploader
             photos={photos}
@@ -500,17 +502,17 @@ export default function AddClient() {
           />
           {fieldErr(usable.length === 0) && (
             <p className="mt-1 text-base font-medium text-vermilion-ink" role="alert">
-              Add at least one photo so people can see how it looks.
+              {t("photoRequired")}
             </p>
           )}
         </section>
 
         {formError && (
           <div className="rounded-xl border-2 border-vermilion bg-paper px-3 py-2 text-base" role="alert" data-testid="form-error">
-            <p>{formError}</p>
+            <p>{t(formError as Key)}</p>
             {pandalId && photos.some((p) => p.status === "failed") && (
               <button type="button" onClick={() => finish(pandalId)} className="mt-1 h-12 font-semibold text-indigo underline">
-                Finish without them
+                {t("finishWithout")}
               </button>
             )}
           </div>
@@ -525,7 +527,7 @@ export default function AddClient() {
       >
         <div className={`mx-auto max-w-xl lg:flex lg:items-center lg:justify-end lg:gap-4 ${existingId ? "lg:max-w-3xl" : "lg:max-w-6xl lg:px-2"}`}>
           {showErrors && needAck && (
-            <p className="mb-2 text-sm font-medium text-vermilion-ink">Confirm it&apos;s a different pandal, or add photos to the existing one.</p>
+            <p className="mb-2 text-sm font-medium text-vermilion-ink">{t("confirmDifferent")}</p>
           )}
           <button
             type="button"
@@ -535,16 +537,16 @@ export default function AddClient() {
             data-testid="add-submit"
           >
             {submitting
-              ? "Saving…"
+              ? t("saving")
               : !existingId && !locked && draft.pin && !dupChecked && dupCheck.status === "checking"
-                ? "Checking for nearby pandals…"
+                ? t("checkingNearby")
                 : stillPreparing
-                ? "Preparing photos…"
+                ? t("preparingPhotos")
                 : photos.some((p) => p.status === "failed")
-                  ? "Retry failed uploads"
+                  ? t("retryUploads")
                   : existingId
-                    ? "Upload photos"
-                    : "Add pandal"}
+                    ? t("uploadPhotos")
+                    : t("addPandal")}
           </button>
         </div>
       </div>
@@ -553,19 +555,21 @@ export default function AddClient() {
 }
 
 function Field({
+  fieldId,
   label,
   hint,
   required,
   error,
   children,
 }: {
+  fieldId: string;
   label: string;
   hint?: string;
   required?: boolean;
   error?: string | null;
   children: (id: string) => React.ReactNode;
 }) {
-  const id = `f-${label.toLowerCase().replace(/[^a-z]+/g, "-")}`;
+  const id = `f-${fieldId}`;
   return (
     <div>
       <label htmlFor={id} className="mb-1 block text-base font-semibold">

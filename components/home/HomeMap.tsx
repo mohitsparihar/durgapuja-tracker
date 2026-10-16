@@ -1,8 +1,9 @@
 "use client";
 
-import L from "leaflet";
-import { useEffect, useMemo } from "react";
-import { AttributionControl, MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { Map, Marker, useApiIsLoaded, useMap } from "@vis.gl/react-google-maps";
+import { useEffect } from "react";
+import { GoogleMapFrame, INDIA_CAMERA, INDIA_ZOOM } from "@/components/maps/GoogleMapFrame";
+import { clusterPinIcon, pandalPinIcon, searchPinIcon, userDotIcon } from "@/components/maps/markerIcons";
 import { INDIA_BOUNDS } from "@/lib/config";
 import type { Bounds, Cluster, LatLng, PandalSummary } from "@/lib/types";
 
@@ -13,91 +14,144 @@ export interface MapView {
 }
 
 export interface MapApi {
-  flyTo: (p: LatLng, zoom?: number) => void;
+  /** `bottomPad` is the sheet height the pin should sit above, in pixels. */
+  flyTo: (p: LatLng, zoom?: number, bottomPad?: number) => void;
   fitIndia: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
   getZoom: () => number;
 }
 
-// The visible pin is 34px wide, but the tap target is padded to ≥48px.
-const pinHtml = (selected: boolean, review: boolean) => `
-  <span style="display:flex;width:100%;height:100%;align-items:flex-end;justify-content:center">
-  <svg width="${selected ? 44 : 34}" height="${selected ? 56 : 44}" viewBox="0 0 34 44" aria-hidden="true">
-    ${selected ? '<ellipse cx="17" cy="41" rx="9" ry="3" fill="rgba(0,0,0,.25)"/>' : ""}
-    <path d="M17 1.5C8.4 1.5 1.5 8.3 1.5 16.8 1.5 28.5 17 42 17 42s15.5-13.5 15.5-25.2C32.5 8.3 25.6 1.5 17 1.5Z"
-      fill="${selected ? "#1e1b4b" : "#d7263d"}" stroke="${selected ? "#f2a900" : "#ffffff"}" stroke-width="${selected ? 3 : 2.5}"/>
-    <circle cx="17" cy="16.5" r="${review ? 4.5 : 5.5}" fill="${selected ? "#f2a900" : "#ffffff"}"/>
-  </svg></span>`;
-
-const iconCache = new Map<string, L.DivIcon>();
-export function pinIcon(selected: boolean, review: boolean): L.DivIcon {
-  const key = `${selected}-${review}`;
-  let icon = iconCache.get(key);
-  if (!icon) {
-    icon = L.divIcon({
-      className: "pin-icon",
-      html: pinHtml(selected, review),
-      iconSize: selected ? [48, 58] : [48, 48],
-      iconAnchor: selected ? [24, 56] : [24, 47],
-    });
-    iconCache.set(key, icon);
-  }
-  return icon;
+/** Shift the camera south so the target sits in the open map, above the sheet. */
+function visibleCenter(map: google.maps.Map, p: LatLng, zoom: number, bottom: number, top: number): LatLng {
+  const shiftY = (bottom - top) / 2;
+  const projection = map.getProjection();
+  if (!projection || shiftY < 8) return p;
+  const world = projection.fromLatLngToPoint(new google.maps.LatLng(p.lat, p.lng));
+  if (!world) return p;
+  const center = projection.fromPointToLatLng(new google.maps.Point(world.x, world.y + shiftY / 2 ** zoom));
+  return center ? { lat: center.lat(), lng: center.lng() } : p;
 }
 
-function clusterIcon(count: number): L.DivIcon {
-  // 48px minimum so every bubble is a comfortable tap target.
-  const size = Math.round(Math.min(72, 48 + Math.log10(count) * 12));
-  const label = count >= 1000 ? `${Math.floor(count / 100) / 10}k` : String(count);
-  return L.divIcon({
-    className: "cluster-icon",
-    html: `<div class="cluster-bubble" style="width:${size}px;height:${size}px;font-size:${count >= 100 ? 15 : 17}px">${label}</div>`,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
-  });
+function sheetPad(): number {
+  return Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sheet-h")) || 0;
 }
 
-const userIcon = L.divIcon({
-  className: "pin-icon",
-  html: `<span style="display:block;width:22px;height:22px;border-radius:9999px;background:#2563eb;border:4px solid #fff;box-shadow:0 0 0 6px rgba(37,99,235,.25)"></span>`,
-  iconSize: [22, 22],
-  iconAnchor: [11, 11],
-});
-
-function toView(map: L.Map): MapView {
-  const b = map.getBounds();
-  const c = map.getCenter();
-  return {
-    bounds: {
-      south: Math.max(-90, b.getSouth()),
-      west: Math.max(-180, b.getWest()),
-      north: Math.min(90, b.getNorth()),
-      east: Math.min(180, b.getEast()),
-    },
-    zoom: map.getZoom(),
-    center: { lat: c.lat, lng: c.lng },
-  };
-}
-
-function Bridge({ onView, onReady }: { onView: (v: MapView) => void; onReady: (api: MapApi) => void }) {
+function Bridge({
+  onView,
+  onReady,
+  chromeTop,
+}: {
+  onView: (v: MapView) => void;
+  onReady: (api: MapApi) => void;
+  chromeTop: number;
+}) {
   const map = useMap();
-  useMapEvents({ moveend: () => onView(toView(map)) });
   useEffect(() => {
+    if (!map) return;
+    const report = () => {
+      const b = map.getBounds();
+      const c = map.getCenter();
+      const zoom = map.getZoom();
+      if (!b || !c || zoom == null) return;
+      onView({
+        bounds: {
+          south: Math.max(-90, b.getSouthWest().lat()),
+          west: Math.max(-180, b.getSouthWest().lng()),
+          north: Math.min(90, b.getNorthEast().lat()),
+          east: Math.min(180, b.getNorthEast().lng()),
+        },
+        zoom,
+        center: { lat: c.lat(), lng: c.lng() },
+      });
+    };
+    const idle = map.addListener("idle", report);
+    const applyPad = () => {
+      const pad = { top: chromeTop, right: 0, bottom: sheetPad(), left: 0 };
+      map.setOptions({ padding: pad } as google.maps.MapOptions);
+    };
+    applyPad();
+    const obs = new MutationObserver(applyPad);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
     onReady({
-      flyTo: (p, zoom) => map.flyTo([p.lat, p.lng], zoom ?? map.getZoom(), { duration: 0.6 }),
-      fitIndia: () => map.fitBounds(INDIA_BOUNDS),
-      zoomIn: () => map.zoomIn(),
-      zoomOut: () => map.zoomOut(),
-      getZoom: () => map.getZoom(),
+      flyTo: (p, zoom, bottomPad) => {
+        const z = zoom ?? map.getZoom() ?? INDIA_ZOOM;
+        const bottom = bottomPad ?? sheetPad();
+        const shiftY = (bottom - chromeTop) / 2;
+        const center = visibleCenter(map, p, z, bottom, chromeTop);
+        map.moveCamera({ center, zoom: z });
+        if (center === p && shiftY >= 8) {
+          google.maps.event.addListenerOnce(map, "idle", () => map.panBy(0, shiftY));
+        }
+      },
+      fitIndia: () =>
+        map.fitBounds({
+          south: INDIA_BOUNDS[0][0],
+          west: INDIA_BOUNDS[0][1],
+          north: INDIA_BOUNDS[1][0],
+          east: INDIA_BOUNDS[1][1],
+        }),
+      zoomIn: () => map.setZoom((map.getZoom() ?? INDIA_ZOOM) + 1),
+      zoomOut: () => map.setZoom((map.getZoom() ?? INDIA_ZOOM) - 1),
+      getZoom: () => map.getZoom() ?? INDIA_ZOOM,
     });
-    onView(toView(map));
-    // Sheet/panel layout changes resize the map container.
-    const ro = new ResizeObserver(() => map.invalidateSize());
-    ro.observe(map.getContainer());
-    return () => ro.disconnect();
-  }, [map, onReady, onView]);
+    report();
+    return () => {
+      idle.remove();
+      obs.disconnect();
+    };
+  }, [map, onReady, onView, chromeTop]);
   return null;
+}
+
+function Pins({
+  markers,
+  clusters,
+  selectedId,
+  userPoint,
+  placePoint,
+  onMarkerSelect,
+  onClusterSelect,
+}: {
+  markers: PandalSummary[];
+  clusters: Cluster[];
+  selectedId: string | null;
+  userPoint: LatLng | null;
+  placePoint: LatLng | null;
+  onMarkerSelect: (p: PandalSummary) => void;
+  onClusterSelect: (c: Cluster) => void;
+}) {
+  const ready = useApiIsLoaded();
+  if (!ready) return null;
+  return (
+    <>
+      {clusters.map((c) => (
+        <Marker
+          key={`c-${c.lat.toFixed(4)}-${c.lng.toFixed(4)}-${c.count}`}
+          position={{ lat: c.lat, lng: c.lng }}
+          icon={clusterPinIcon(c.count)}
+          title={`${c.count} pandals`}
+          onClick={() => onClusterSelect(c)}
+        />
+      ))}
+      {markers.map((p) => (
+        <Marker
+          key={p.id}
+          position={{ lat: p.lat, lng: p.lng }}
+          icon={pandalPinIcon(p.id === selectedId, p.status === "needs_review")}
+          title={p.name}
+          zIndex={p.id === selectedId ? 1000 : 1}
+          onClick={() => onMarkerSelect(p)}
+        />
+      ))}
+      {placePoint && (
+        <Marker position={placePoint} icon={searchPinIcon()} clickable={false} zIndex={900} />
+      )}
+      {userPoint && (
+        <Marker position={userPoint} icon={userDotIcon()} clickable={false} zIndex={500} />
+      )}
+    </>
+  );
 }
 
 export default function HomeMap({
@@ -105,6 +159,8 @@ export default function HomeMap({
   clusters,
   selectedId,
   userPoint,
+  placePoint = null,
+  chromeTop = 0,
   onMarkerSelect,
   onClusterSelect,
   onView,
@@ -114,57 +170,37 @@ export default function HomeMap({
   clusters: Cluster[];
   selectedId: string | null;
   userPoint: LatLng | null;
+  placePoint?: LatLng | null;
+  chromeTop?: number;
   onMarkerSelect: (p: PandalSummary) => void;
   onClusterSelect: (c: Cluster) => void;
   onView: (v: MapView) => void;
   onReady: (api: MapApi) => void;
 }) {
-  const clusterIcons = useMemo(() => clusters.map((c) => clusterIcon(c.count)), [clusters]);
-
   return (
-    <MapContainer
-      bounds={INDIA_BOUNDS}
-      zoomControl={false}
-      attributionControl={false}
-      minZoom={4}
-      maxZoom={19}
-      worldCopyJump={false}
-      className="home-map h-full w-full"
-    >
-      <TileLayer
-        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
-        maxZoom={19}
-      />
-      <AttributionControl position="bottomleft" prefix={false} />
-      <Bridge onView={onView} onReady={onReady} />
-
-      {clusters.map((c, i) => (
-        <Marker
-          key={`c-${c.lat.toFixed(4)}-${c.lng.toFixed(4)}-${c.count}`}
-          position={[c.lat, c.lng]}
-          icon={clusterIcons[i]}
-          title={`${c.count} pandals here — tap to zoom in`}
-          alt={`${c.count} pandals`}
-          eventHandlers={{ click: () => onClusterSelect(c) }}
+    <GoogleMapFrame>
+      <Map
+        defaultCenter={INDIA_CAMERA}
+        defaultZoom={INDIA_ZOOM}
+        gestureHandling="greedy"
+        disableDefaultUI
+        clickableIcons={false}
+        minZoom={4}
+        maxZoom={20}
+        className="home-map h-full w-full"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <Bridge onView={onView} onReady={onReady} chromeTop={chromeTop} />
+        <Pins
+          markers={markers}
+          clusters={clusters}
+          selectedId={selectedId}
+          userPoint={userPoint}
+          placePoint={placePoint}
+          onMarkerSelect={onMarkerSelect}
+          onClusterSelect={onClusterSelect}
         />
-      ))}
-
-      {markers.map((p) => (
-        <Marker
-          key={p.id}
-          position={[p.lat, p.lng]}
-          icon={pinIcon(p.id === selectedId, p.status === "needs_review")}
-          title={p.name}
-          alt={p.name}
-          zIndexOffset={p.id === selectedId ? 1000 : 0}
-          eventHandlers={{ click: () => onMarkerSelect(p) }}
-        />
-      ))}
-
-      {userPoint && (
-        <Marker position={[userPoint.lat, userPoint.lng]} icon={userIcon} interactive={false} keyboard={false} />
-      )}
-    </MapContainer>
+      </Map>
+    </GoogleMapFrame>
   );
 }

@@ -13,7 +13,8 @@ import { PhotoImg } from "@/components/PhotoImg";
 import { ErrorBanner } from "@/components/StateBanners";
 import { useAuth } from "@/lib/auth";
 import { deletePandal, deletePhoto, getPandal, subscribeCrowd } from "@/lib/data";
-import { friendlyError } from "@/lib/errors";
+import { errorKey } from "@/lib/errors";
+import { useI18n, type Key } from "@/lib/i18n";
 import { directionsUrl } from "@/lib/geo";
 import { useMinWidth, useRefetchOnReturn } from "@/lib/hooks";
 import dynamic from "next/dynamic";
@@ -27,6 +28,7 @@ const MiniMap = dynamic(() => import("./MiniMap"), {
 
 export default function PandalDetailClient({ id }: { id: string }) {
   const router = useRouter();
+  const { t } = useI18n();
   const { user, requireUser } = useAuth();
   const wide = useMinWidth(1024);
   const [p, setP] = useState<PandalDetail | null>(null);
@@ -66,7 +68,7 @@ export default function PandalDetailClient({ id }: { id: string }) {
       setErr(null);
     } catch (e) {
       if (n !== req.current) return;
-      setErr(friendlyError(e));
+      setErr(t(errorKey(e)));
       setState((s) => (s === "ready" ? s : "error"));
     }
   }, [id]);
@@ -93,12 +95,12 @@ export default function PandalDetailClient({ id }: { id: string }) {
   if (state === "missing")
     return (
       <main className="min-h-dvh bg-ivory">
-        <PageBar title="Pandal" />
+        <PageBar title={t("pandal")} />
         <div className="mx-auto max-w-xl p-5 text-center">
-          <h1 className="text-xl font-bold">This pandal isn&apos;t here any more</h1>
-          <p className="mt-2 text-base text-ink-2">It may have been removed by the person who added it.</p>
+          <h1 className="text-xl font-bold">{t("missingTitle")}</h1>
+          <p className="mt-2 text-base text-ink-2">{t("missingBody")}</p>
           <Link href="/" className="mt-5 inline-flex h-12 items-center rounded-xl bg-indigo px-5 font-semibold text-ivory">
-            Back to the map
+            {t("backToMap")}
           </Link>
         </div>
       </main>
@@ -106,9 +108,9 @@ export default function PandalDetailClient({ id }: { id: string }) {
   if (state === "error" || !p)
     return (
       <main className="min-h-dvh bg-ivory">
-        <PageBar title="Pandal" />
+        <PageBar title={t("pandal")} />
         <div className="mx-auto max-w-xl p-4">
-          <ErrorBanner message={err ?? "Couldn't load this pandal."} onRetry={() => void load()} />
+          <ErrorBanner message={err ?? t("loadFailed")} onRetry={() => void load()} />
         </div>
       </main>
     );
@@ -118,7 +120,7 @@ export default function PandalDetailClient({ id }: { id: string }) {
   const coverPhoto = p.photos.find((ph) => ph.status === "active") ?? null;
   const addPhotos = () => {
     const next = `/add?pandal=${encodeURIComponent(p.id)}`;
-    if (requireUser("Sign in to add photos of this pandal.", { next, onSignedIn: () => router.push(next) }))
+    if (requireUser(t("signInPhotos"), { next, onSignedIn: () => router.push(next) }))
       router.push(next);
   };
 
@@ -137,12 +139,12 @@ export default function PandalDetailClient({ id }: { id: string }) {
             data-testid="detail-cover"
           >
             {coverPhoto ? (
-              <PhotoImg src={coverPhoto.url} alt={`Photo of ${p.name}`} className="h-full w-full object-cover" eager />
+              <PhotoImg src={coverPhoto.url} alt={t("photoOf", { name: p.name })} className="h-full w-full object-cover" eager />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-ivory">
                 <div className="festive-edge absolute inset-x-0 top-0" aria-hidden />
                 <CameraIcon className="h-8 w-8 text-marigold" />
-                <p className="text-base">No photos yet — be the first to share how it looks.</p>
+                <p className="text-base">{t("noPhotosFirst")}</p>
               </div>
             )}
           </div>
@@ -151,24 +153,24 @@ export default function PandalDetailClient({ id }: { id: string }) {
           <section className="order-4 mt-6 px-4 lg:px-0" aria-labelledby="photos-h">
             <div className="flex items-center justify-between gap-2">
               <h2 id="photos-h" className="text-lg font-bold lg:text-xl">
-                Photos <span className="font-normal text-ink-2">({p.photos.length})</span>
+                {t("photos")} <span className="font-normal text-ink-2">({p.photos.length})</span>
               </h2>
               <button
                 onClick={addPhotos}
                 className="flex h-12 items-center gap-2 rounded-xl border-2 border-indigo px-4 text-base font-semibold text-indigo"
                 data-testid="add-photos"
               >
-                <CameraIcon /> Add photos
+                <CameraIcon /> {t("addPhotos")}
               </button>
             </div>
             {p.photos.length > 0 ? (
               <ul className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-3 lg:gap-3" data-testid="gallery">
                 {p.photos.map((ph) => (
                   <li key={ph.id} className="relative aspect-[4/3] overflow-hidden rounded-xl" data-testid="gallery-photo">
-                    <PhotoImg src={ph.url} alt={`Visitor photo of ${p.name}`} className="h-full w-full object-cover" />
+                    <PhotoImg src={ph.url} alt={t("visitorPhoto", { name: p.name })} className="h-full w-full object-cover" />
                     {ph.status === "needs_review" && (
                       <span className="absolute left-1.5 top-1.5 rounded-full bg-paper px-2 py-0.5 text-xs font-bold text-ink shadow">
-                        Under review
+                        {t("underReview")}
                       </span>
                     )}
                     <div className="absolute bottom-1 right-1 flex gap-1">
@@ -176,7 +178,7 @@ export default function PandalDetailClient({ id }: { id: string }) {
                         <button
                           onClick={() => setConfirm({ kind: "photo", photo: ph })}
                           className="grid h-12 w-12 place-items-center rounded-full bg-indigo/70 text-ivory"
-                          aria-label="Delete your photo"
+                          aria-label={t("deleteYourPhoto")}
                         >
                           <TrashIcon />
                         </button>
@@ -187,7 +189,7 @@ export default function PandalDetailClient({ id }: { id: string }) {
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-base text-ink-2">No photos yet.</p>
+              <p className="mt-2 text-base text-ink-2">{t("noPhotosYet")}</p>
             )}
           </section>
 
@@ -195,14 +197,14 @@ export default function PandalDetailClient({ id }: { id: string }) {
           {(p.description || p.tags.length > 0) && (
             <section className="order-5 mt-6 px-4 lg:px-0" aria-labelledby="about-h">
               <h2 id="about-h" className="text-lg font-bold lg:text-xl">
-                About
+                {t("about")}
               </h2>
               {p.description && <p className="mt-1 max-w-prose whitespace-pre-line break-words text-base lg:text-lg">{p.description}</p>}
               {p.tags.length > 0 && (
-                <ul className="mt-3 flex flex-wrap gap-2" aria-label="Tags">
-                  {p.tags.map((t) => (
-                    <li key={t} className="rounded-full border border-marigold bg-marigold-soft/50 px-3 py-1 text-sm font-medium">
-                      {t}
+                <ul className="mt-3 flex flex-wrap gap-2" aria-label={t("tags")}>
+                  {p.tags.map((tag) => (
+                    <li key={tag} className="rounded-full border border-marigold bg-marigold-soft/50 px-3 py-1 text-sm font-medium">
+                      {t(`tag.${tag}` as Key)}
                     </li>
                   ))}
                 </ul>
@@ -213,7 +215,7 @@ export default function PandalDetailClient({ id }: { id: string }) {
 
         <aside
           className="contents lg:sticky lg:top-24 lg:block lg:max-h-[calc(100dvh-7rem)] lg:space-y-4 lg:overflow-y-auto lg:pb-2"
-          aria-label="Pandal info"
+          aria-label={t("pandalInfo")}
         >
           <div className="order-2 px-4 pt-4 lg:rounded-3xl lg:border lg:border-line lg:bg-paper lg:p-5 lg:shadow-sm">
             {p.status === "needs_review" && (
@@ -224,8 +226,7 @@ export default function PandalDetailClient({ id }: { id: string }) {
               >
                 <AlertIcon className="mt-0.5 h-5 w-5 shrink-0 text-ink-2" />
                 <span>
-                  <strong>Under review.</strong> Several visitors reported something about this pandal. Details may be
-                  inaccurate until it&apos;s checked.
+                  <strong>{t("underReview")}.</strong> {t("underReviewBody")}
                 </span>
               </div>
             )}
@@ -254,7 +255,7 @@ export default function PandalDetailClient({ id }: { id: string }) {
               className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-vermilion text-lg font-bold text-white shadow-[0_6px_18px_rgba(215,38,61,0.35)] active:bg-vermilion-ink"
               data-testid="directions"
             >
-              <DirectionsIcon className="h-6 w-6" /> Directions
+              <DirectionsIcon className="h-6 w-6" /> {t("directions")}
             </a>
 
             {err && (
@@ -268,7 +269,7 @@ export default function PandalDetailClient({ id }: { id: string }) {
           <section className="order-3 mx-4 mt-6 rounded-2xl border border-line bg-paper p-4 lg:mx-0 lg:mt-0 lg:rounded-3xl lg:p-5" aria-labelledby="crowd-h">
             <div className="flex items-center justify-between gap-2">
               <h2 id="crowd-h" className="text-lg font-bold">
-                How crowded is it now?
+                {t("howCrowded")}
               </h2>
               {!showReport && (
                 <button
@@ -276,11 +277,11 @@ export default function PandalDetailClient({ id }: { id: string }) {
                   className="h-12 shrink-0 rounded-xl bg-indigo px-4 text-base font-semibold text-ivory"
                   data-testid="open-crowd-report"
                 >
-                  I&apos;m here
+                  {t("imHere")}
                 </button>
               )}
             </div>
-            <p className="mt-1 text-sm text-ink-2">Reports show for 45 minutes, so the status is always fresh.</p>
+            <p className="mt-1 text-sm text-ink-2">{t("crowdFresh")}</p>
             {showReport && (
               <div className="mt-3">
                 <CrowdReportButtons
@@ -311,13 +312,14 @@ export default function PandalDetailClient({ id }: { id: string }) {
             <div className="festive-dots mt-8 opacity-60 lg:mt-0" aria-hidden />
             <div className="mt-4 flex flex-wrap gap-2">
               <FlagButton kind="pandal" targetId={p.id} pandalId={p.id} resume={flagResume("pandal", p.id)} onDone={setToast} />
+              <p className="w-full text-sm text-ink-2">{t("wrongPinHint")}</p>
               {isOwner && (
                 <button
                   onClick={() => setConfirm({ kind: "pandal" })}
                   className="flex h-12 items-center gap-2 rounded-xl border-2 border-vermilion px-4 text-base font-semibold text-vermilion-ink"
                   data-testid="delete-pandal"
                 >
-                  <TrashIcon /> Delete pandal
+                  <TrashIcon /> {t("deletePandal")}
                 </button>
               )}
             </div>
@@ -327,17 +329,17 @@ export default function PandalDetailClient({ id }: { id: string }) {
 
       {confirm?.kind === "pandal" && (
         <ConfirmModal
-          title="Delete this pandal?"
-          body="This removes the pandal, its photos and crowd reports for everyone. This can't be undone."
-          confirmLabel="Delete"
+          title={t("deletePandalAsk")}
+          body={t("deletePandalBody")}
+          confirmLabel={t("delete")}
           onClose={() => setConfirm(null)}
           onConfirm={async () => {
-            const u = requireUser("Sign in to delete.");
+            const u = requireUser(t("signInDelete"));
             if (!u) return;
             try {
               await deletePandal(p.id, u.id);
             } catch (e) {
-              throw new Error(friendlyError(e));
+              throw new Error(t(errorKey(e)));
             }
             router.replace("/");
           }}
@@ -345,20 +347,20 @@ export default function PandalDetailClient({ id }: { id: string }) {
       )}
       {confirm?.kind === "photo" && (
         <ConfirmModal
-          title="Delete your photo?"
-          body="It will be removed for everyone."
-          confirmLabel="Delete photo"
+          title={t("deletePhotoAsk")}
+          body={t("deletePhotoBody")}
+          confirmLabel={t("deletePhoto")}
           onClose={() => setConfirm(null)}
           onConfirm={async () => {
-            const u = requireUser("Sign in to delete.");
+            const u = requireUser(t("signInDelete"));
             if (!u) return;
             try {
               await deletePhoto(confirm.photo, u.id);
             } catch (e) {
-              throw new Error(friendlyError(e));
+              throw new Error(t(errorKey(e)));
             }
             setConfirm(null);
-            setToast("Photo deleted.");
+            setToast(t("photoDeleted"));
             await load();
           }}
         />

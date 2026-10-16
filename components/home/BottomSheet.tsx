@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useI18n } from "@/lib/i18n";
 
 export type Snap = "peek" | "half" | "full";
 const PEEK = 132;
@@ -10,6 +11,11 @@ function heights(topOffset: number, vh: number) {
   const full = Math.max(PEEK + 80, vh - topOffset - 8);
   const half = Math.min(full, Math.max(PEEK + 120, Math.round(vh * 0.5)));
   return { peek: PEEK, half, full };
+}
+
+/** Pixel height of a snap, so the map can keep a pin in the visible band above the sheet. */
+export function sheetHeightFor(snap: Snap, topOffset: number, vh: number) {
+  return heights(topOffset, vh)[snap];
 }
 
 /**
@@ -31,6 +37,7 @@ export function BottomSheet({
   children: React.ReactNode;
 }) {
   // Fixed first render so SSR and hydration agree; real size is measured in the effect.
+  const { t } = useI18n();
   const [h, setH] = useState(() => heights(topOffset, 800));
   const [dragH, setDragH] = useState<number | null>(null);
   const drag = useRef<{ y0: number; h0: number; moved: boolean; vy: number; lastY: number; lastT: number } | null>(null);
@@ -94,14 +101,14 @@ export function BottomSheet({
   );
 
   const label: Record<Snap, string> = {
-    peek: "Show more of the list",
-    half: "Expand list to full screen",
-    full: "Collapse list to show the map",
+    peek: t("sheetMore"),
+    half: t("sheetFull"),
+    full: t("sheetMap"),
   };
 
   return (
     <section
-      aria-label="Pandal list"
+      aria-label={t("pandalList")}
       data-testid="bottom-sheet"
       data-snap={snap}
       className="fixed inset-x-0 bottom-0 z-[500] flex flex-col rounded-t-3xl bg-ivory shadow-[0_-8px_30px_rgba(30,27,75,0.25)]"

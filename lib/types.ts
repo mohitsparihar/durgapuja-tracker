@@ -85,3 +85,11 @@ export interface GeocodeResult {
   lat: number;
   lng: number;
 }
+
+/** A row in the search box. Google Places fills coordinates only after the row is chosen. */
+export interface PlaceSuggestion {
+  label: string;
+  placeId: string;
+  lat: number | null;
+  lng: number | null;
+}
